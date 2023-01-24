@@ -1,0 +1,160 @@
+---
+title: "NectarExperiment_SummaryRMarkdown"
+output:
+  word_document: default
+  html_document: default
+date: "2023-01-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown Nectar Experiment Analysis Script
+### Writen by Manon Veselovsky
+
+```{r, include=FALSE}
+rm(list=ls())
+```
+
+
+```{r, include=FALSE}
+summarydat<-read.csv("processed/summarydat.csv")
+data = summarydat
+library(lmerTest)
+library(car)
+library(effects)
+require(ggplot2)
+library(emmeans)
+library(multcomp)
+
+```
+
+#### create separate working databases for greenhouse and field experiments
+```{r}
+GH_data = subset(summarydat, summarydat$ExpLoc == "GH")
+Field_data = subset(summarydat,summarydat$ExpLoc == "Field")
+```
+
+## Data Analysis
+### Greenhouse
+
+#### Check the weights on day 7 of trial for normality
+```{r, echo=FALSE, fig.cap="Plots to check normality and formal test"}
+mygraph <- ggplot(GH_data, aes(x = RawWeight_day7))
+mygraph <- mygraph +
+  # add data density smooth
+  geom_density() +
+  # add rug (bars at the bottom of the plot)
+  geom_rug() +
+  # add black semitransparent histogram
+  geom_histogram(aes(y = ..density..),
+  color = "black",
+  alpha = 0.3) +
+  # add normal curve in red, with mean and sd from fklength
+  stat_function(fun = dnorm,
+  args = list(
+  mean = mean(GH_data$RawWeight_day7),
+  sd = sd(GH_data$RawWeight_day7)
+  ),
+  color = "red")
+
+#display graph
+mygraph
+qqnorm(GH_data$RawWeight_day7)
+qqline(GH_data$RawWeight_day7)
+
+# Shapiro formal test for normality
+shapiro.test(GH_data$RawWeight_day7)
+```
+
+#### Create full model for the raw weight of greenhouse butterflies on day 7 of trial as a function of experimental variables
+
+```{r}
+lmer.model = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + Cohort + EnclCol + (1|Couple), data=GH_data)
+Anova(lmer.model, type=3)
+```
+
+#### Check for collinearity between variables and check model assumptions
+```{r, include = FALSE}
+vif(lmer.model) #all good
+opar <- par(mfrow = c(2, 2))
+plot(lmer.model)
+# diagnostic plots of the model
+qqnorm(resid(lmer.model))
+qqline(resid(lmer.model)) #residuals appear normally distributed
+```
+
+##### Reduce model, removing least significant terms
+```{r, include=FALSE}
+# Remove cohort
+reduced_1 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + EnclCol + (1|Couple), data=GH_data)
+```
+
+```{r}
+#test to see if more complex model is significantly better
+anova(reduced_1, lmer.model) #more complex not significantly better, leave cohort out
+Anova(reduced_1, type=3) #next least significant term is EmergDate
+```
+
+```{r, include=FALSE}
+reduced_2 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EnclCol + (1|Couple), data=GH_data)
+```
+
+```{r}
+#test to see if more complex is significantly better
+anova(reduced_2, reduced_1) #more complex not significantly better, leave EmergDate out
+Anova(reduced_2, type=3) #next least significant is EnclCol
+```
+
+```{r, include=FALSE}
+reduced_3= lmer(RawWeight_day7~ Plant + Sex + ForewingLength + (1|Couple), data=GH_data)
+```
+
+```{r}
+#test to see if reduced is significantly better
+anova(reduced_3, reduced_2) #more complex is significantly better, keep reduced_2
+
+bestmodel = reduced_2 #assign best model and display its effects plot
+```
+
+```{r,echo = FALSE, fig.cap="Effects plot of the best model"}
+plot(allEffects(bestmodel))
+```
+
+#### Multiple comparisons test to detect differences between plant treatment groups
+
+```{r}
+m1<-bestmodel
+library(multcomp)
+#WHICH groups are different from each other
+g<-glht(m1, mcp(Plant="Tukey")); confint(g)
+#OR
+# library(emmeans)
+# emmeans(m1, list(pairwise~Plant), adjust="tukey")
+```
+
+### Comparing greenhouse and field goldenrod
+
+```{r, include=FALSE}
+#Create a database of field and gh goldenrod to compare experiments
+GH_F_data = summarydat[which(summarydat$Plant=="SolAlt"),]
+
+#Check for normality on raw day 7 weights
+hist(GH_F_data$RawWeight_day7)
+
+#Use relative weight change (a proportion) in GLMER (binomial distribution for proportion)
+gh_f_model = lmer(RawWeight_day7~ Sex + ForewingLength + ExpLoc + (1|Couple), data=GH_F_data)
+Anova(gh_f_model, type=3)
+
+
+plot(allEffects(gh_f_model))
+```
+### Check flower surface area and if it significantly differs between species
+```{r}
+SA_comparison = lm(TotalSA ~ Plant + ExpLoc + Plant:ExpLoc, data=data)
+emmeans(SA_comparison, list(pairwise~Plant), adjust="tukey")
+plot(allEffects(SA_comparison))
+```
+
+###

@@ -1,0 +1,67 @@
+---
+title: "NectarExperiment_SummaryRMarkdown"
+output:
+  word_document: default
+  html_document: default
+date: "2023-01-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown Analysis Script
+### Writen by Manon Veselovsky
+
+```{r}
+rm(list=ls())
+getwd()
+```
+
+#### Load data files and necessary libraries
+
+```{r}
+summarydat<-read.csv("processed/summarydat.csv")
+data = summarydat
+library(lmerTest)
+library(car)
+library(effects)
+require(ggplot2)
+```
+
+#### create separate working databases for greenhouse and field experiments
+```{r}
+GH_data = subset(summarydat, summarydat$ExpLoc == "GH")
+Field_data = subset(summarydat,summarydat$ExpLoc == "Field")
+```
+
+## Data Analysis
+### Greenhouse
+
+#### Check the weights on day 7 of trial for normality
+```{r}
+mygraph <- ggplot(GH_data, aes(x = RawWeight_day7))
+mygraph <- mygraph +
+  # add data density smooth
+  geom_density() +
+  # add rug (bars at the bottom of the plot)
+  geom_rug() +
+  # add black semitransparent histogram
+  geom_histogram(aes(y = ..density..),
+  color = "black",
+  alpha = 0.3) +
+  # add normal curve in red, with mean and sd from fklength
+  stat_function(fun = dnorm,
+  args = list(
+  mean = mean(GH_data$RawWeight_day7),
+  sd = sd(GH_data$RawWeight_day7)
+  ),
+  color = "red")
+
+#display graph
+mygraph
+qqnorm(GH_data$RawWeight_day7)
+qqline(GH_data$RawWeight_day7)
+
+shapiro.test(GH_data$RawWeight_day7)
+```
