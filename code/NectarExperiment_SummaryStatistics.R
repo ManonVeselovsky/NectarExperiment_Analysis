@@ -25,11 +25,11 @@ Field_data = subset(summarydat,summarydat$ExpLoc == "Field")
 SolAlt_F_data = subset(Field_data,Field_data$Plant == "SolAlt") #Subset SolAlt in field to check for enclosure effects
 
 
-########## GREEHOUSE DATA ANALYSIS ##############
-################## Normality check ###############
+########## 1. GREEHOUSE DATA ANALYSIS ##############
+################## 1.1 Normality check ###############
 opar <- par(mfrow = c(1, 1))
 
-#Check for normality of raw weight on day 7
+#Check for normality of the butterflies raw weights on day 7 of their respective trials
 mygraph <- ggplot(GH_data, aes(x = RawWeight_day7))
 mygraph <- mygraph +
   # add data density smooth
@@ -58,15 +58,21 @@ shapiro.test(GH_data$RawWeight_day7)
 
 
 
-#################### MODEL BUILDING ####################################
+#################### 1.2 MODEL BUILDING - LMER ###########################
 
-#check collinearity of starting weight and forewing length (to see if I need both)
+# Check collinearity of starting weight and forewing length (to see if I need both in the model)
+# The a-priori expectation is that they will be correlated, with forewing length the ideal variable
+# as it does not change with adult age. Weights could fluctuate depending on the time they were taken
+# since emergence (metabolism as they have not eaten, and drying time for the fluid they expel
+# as they eclose from their crysalids)
+
 fwl_day0w_lm = lm(RawWeight_day0 ~ ForewingLength, data=GH_data)
-Anova(fwl_day0w_lm, type=3)
-summary(fwl_day0w_lm)
+Anova(fwl_day0w_lm, type=3)# Significantly related, so I will keep forewing length
+summary(fwl_day0w_lm) 
 
 # Estimate the change in raw weight on day 7 of trial based on predictor variables
-lmer.model = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + Cohort + EnclCol + (1|Couple), data=GH_data)
+lmer.model = lmer(RawWeight_day7~ Plant + Sex + ForewingLength
+                  + EmergDate + Cohort + EnclCol + (1|Couple), data=GH_data)
 
 
 #Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
@@ -111,7 +117,7 @@ bestmodel = reduced_2
 
 
 
-############ Multiple comparisons test
+############ 1.3 Multiple comparisons test
 m1<-bestmodel
 library(multcomp)
 #WHICH groups are different from each other
@@ -129,7 +135,7 @@ qqline(resid(m1))
 require("lattice")
 qqmath(m1,id=0.05)
 
-######## COMPARISON OF GH TO FIELD DATA (USING GOLDENROD) ##############
+######## 2. COMPARISON OF GH TO FIELD DATA (USING GOLDENROD) ##############
 #Create a database of field and gh goldenrod to compare experiments
 GH_F_data = summarydat[which(summarydat$Plant=="SolAlt"),]
 summary(GH_F_data)
@@ -150,7 +156,8 @@ plot(allEffects(gh_f_lm))
 summary(gh_f_lm)
 
 
-################ CHECK PLANT SURFACE AREA
+################ 3. PLANT SURFACE AREA DIFFERENCES BETWEEN SPECIES ############
+
 SA_comparison = lm(TotalSA ~ Plant + ExpLoc + Plant:ExpLoc, data=data)
 summary(SA_comparison)
 # emmeans(SA_comparison, list(pairwise~Plant), adjust="tukey")
@@ -170,7 +177,10 @@ anova(SA_reduced2, SA_reduced)
 Anova(SA_reduced2)
 summary(SA_reduced2)
 
-########## Redo but with lm
+##################### 4. MODEL BUILDING WITH LM #################################
+# Individuals that were collected in the field did not have a known parent couple.
+# These individuals were excluded from my LMER as I had the grouping "Couple" -->
+# Repeating the analysis here with a simple lm WITHOUT the "couple" variable
 
 lm.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + Cohort + EnclCol, data=GH_data)
 
@@ -200,7 +210,10 @@ bestmodel = reduced_1
 Anova(bestmodel, type=3)
 
 
-############ Multiple comparisons test for lm ###################
+############ 4.1 MULTIPLE COMPARISONS TEST FOR LM ###################
+
+# Check for significant differences between plant species and their effect on day7 raw weight
+# using a Tukey adjustment for multiple comparisons/hypothesis tests
 m1<-bestmodel
 library(multcomp)
 #WHICH groups are different from each other
@@ -221,27 +234,49 @@ Anova(bestmodel, type=3)
 
 
 
-###################### Compare field plants ##############
+###################### 5. FIELD PLANTS & COMPARISONS #####################
 
+# Because greenhouse SolAlt (Tall goldenrod) had a different effect from field SolAlt,
+# I will specifically compare the two field species (EutMac/Joe-pye weed & SolAlt)
+# as they cannot be pooled with the greenhouse data
 summary(Field_data)
 
-#subset for just females in the field (used doubles in JPW enclosures and only females for those, only 1 male on JPW field)
+
+##################### 5.1 CHECK FOR ENCLOSURE EFFECTS ####################
+# Check for enclosure effects with just SolAlt data (SolAlt had two different types
+# of enclosures in the trial)
+encl_lm = lm(RawWeight_day7~ Sex + ForewingLength + EmergDate + EnclCol, data=SolAlt_F_data)
+
+Anova(encl_lm) #EnclCol least significant, remove and compare
+encl_reduced = lm(RawWeight_day7~ Sex + ForewingLength + EmergDate, data=SolAlt_F_data)
+anova(encl_reduced, encl_lm) # more complex (with EnclCol) is not significantly better, leave out EnclCol
+
+Anova(encl_reduced) #EmergDate least significant, remove and compare
+encl_reduced2 = lm(RawWeight_day7~ Sex + ForewingLength, data=SolAlt_F_data)
+anova(encl_reduced2, encl_reduced) # more complex (with EmergDate) is not significantly better
+Anova(encl_reduced2)
+
+#Sex least significant, remove and compare
+encl_reduced3 = lm(RawWeight_day7~ ForewingLength, data=SolAlt_F_data)
+anova(encl_reduced3, encl_reduced2) # more complex (with EmergDate) is not significantly better
+
+
+
+# I had a limited number of field plots (only 3 plots of JPW)
+# so the first set of field trials had 2 females per enclosure for EutMac,
+# and a mix of double females, single males, and single females for SolAlt.
+# For the second cohort, I put additional double females and males for both species
+# and added a single female and single male for EutMac. Unfortunately, I did not get
+# more male replicates for EutMac so I will exclude males from the field analysis
 females_data = subset(Field_data,Field_data$Sex == "F")
-
-
-#### Check for enclosure effects with just SolAlt data
-encl_lm = lm(RawWeight_day7~ Sex + ForewingLength + EnclCol, data=SolAlt_F_data)
-
-Anova(encl_lm) #Encl col least significant, remove and compare
-encl_reduced = lm(RawWeight_day7~ Sex + ForewingLength, data=SolAlt_F_data)
-anova(encl_reduced, encl_lm) # more complex (with EnclCol) is not significantly better, can pool across enclcol
 
 #### build model using females, without EnclCol
 field_lm = lm(RawWeight_day7~ Plant + ForewingLength + NumButterflies, data=females_data)
 Anova(field_lm)
 summary(field_lm)
 plot(allEffects(field_lm))
-
+summary(females_data)
+as.factor(females_data$NumButterflies)
 ## remove plant, least significant term, and compare
 field_reduced = lm(RawWeight_day7~ ForewingLength + NumButterflies, data=females_data)
 
