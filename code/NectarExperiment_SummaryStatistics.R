@@ -261,7 +261,7 @@ encl_reduced3 = lm(RawWeight_day7~ ForewingLength, data=SolAlt_F_data)
 anova(encl_reduced3, encl_reduced2) # more complex (with EmergDate) is not significantly better
 
 
-
+#################### 5.2 COMPARE FIELD SPECIES ########################
 # I had a limited number of field plots (only 3 plots of JPW)
 # so the first set of field trials had 2 females per enclosure for EutMac,
 # and a mix of double females, single males, and single females for SolAlt.
