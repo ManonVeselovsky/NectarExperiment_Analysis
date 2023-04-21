@@ -16,6 +16,10 @@ library(effects)
 require(ggplot2)
 library(emmeans)
 library(multcomp)
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(ggeffects)
 
 
 # create separate working databases for greenhouse plants, goldenrod (for GH-Field comparison), and field plants
@@ -56,6 +60,11 @@ qqline(GH_data$RawWeight_day7)
 # Shapiro formal test for normality
 shapiro.test(GH_data$RawWeight_day7)
 
+summary(GH_data)
+myplot<-ggplot(data=GH_data, aes(x=Plant, y=RawWeight_day7),na.action=na.exclude)
+myplot+geom_boxplot(notch=TRUE)
+
+
 
 
 #################### 1.2 MODEL BUILDING - LMER ###########################
@@ -74,40 +83,47 @@ summary(fwl_day0w_lm)
 lmer.model = lmer(RawWeight_day7~ Plant + Sex + ForewingLength
                   + EmergDate + Cohort + EnclCol + (1|Couple), data=GH_data)
 
-
 #Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
 # GVIF^(1/(2*df)) < 2 acceptable for categorical)
 vif(lmer.model) #all good
-opar <- par(mfrow = c(2, 2))
 Anova(lmer.model, type=3)
+summary(lmer.model)
 plot(lmer.model)
+plot(lmer.model, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,xlab="Fitted values",ylab="Standardised residuals")
 
+effects_info = allEffects(lmer.model)
+effects_info
+plot(effects_info)
+#plot(lmer.model, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,col=GH_data$Couple,xlab="Fitted values",ylab="Standardised residuals")
 
 ## Reduce model to remove insignificant terms, starting with cohort
-reduced_1 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + EnclCol + (1|Couple), data=GH_data)
-
-#test to see if more complex model is significantly better at describing the variation
-anova(reduced_1, lmer.model) #not significantly better, leave cohort out
-Anova(reduced_1, type=3)
-
-# Remove next least significant term (EmergDate)
-reduced_2 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EnclCol + (1|Couple), data=GH_data)
-
-#test to see if more complex is significantly better
-anova(reduced_2, reduced_1) #not significantly better, keep the simpler model
-Anova(reduced_2, type=3)
-
-# remove next least significant (EnclCol)
-reduced_3 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + (1|Couple), data=GH_data)
-#test to see if reduced is significantly better
-anova(reduced_3, reduced_2)
+# reduced_1 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + EnclCol + (1|Couple), data=GH_data)
+# 
+# #test to see if more complex model is significantly better at describing the variation
+# anova(reduced_1, lmer.model) #not significantly better, leave cohort out
+# Anova(reduced_1, type=3)
+# 
+# # Remove next least significant term (EmergDate)
+# reduced_2 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EnclCol + (1|Couple), data=GH_data)
+# 
+# #test to see if more complex is significantly better
+# anova(reduced_2, reduced_1) #not significantly better, keep the simpler model
+# Anova(reduced_2, type=3)
+# 
+# # remove next least significant (EnclCol)
+# reduced_3 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + (1|Couple), data=GH_data)
+# #test to see if reduced is significantly better
+# anova(reduced_3, reduced_2)
 
 #more complex is significantly better, keep reduced_2
-bestmodel = reduced_2
-
-
+# bestmodel = reduced_2
+bestmodel = lmer.model
+Anova(bestmodel, type=3)
+summary(bestmodel)
+plot(allEffects(bestmodel))
+#library(MuMIn)
 #dd <- dredge(lmer.model)
-# 
+ 
 # # get models within 4 units of AICc from the best model
 # top.models.1 <- get.models(dd, subset = delta < 4)
 # avgmodel1<-model.avg(top.models.1) # compute average parameters
@@ -119,6 +135,7 @@ bestmodel = reduced_2
 
 ############ 1.3 Multiple comparisons test
 m1<-bestmodel
+Anova(bestmodel)
 library(multcomp)
 #WHICH groups are different from each other
 g<-glht(m1, mcp(Plant="Tukey")); confint(g)
@@ -158,29 +175,35 @@ summary(gh_f_lm)
 
 ################ 3. PLANT SURFACE AREA DIFFERENCES BETWEEN SPECIES ############
 
-SA_comparison = lm(TotalSA ~ Plant + ExpLoc + Plant:ExpLoc, data=data)
+# SA_comparison = lm(TotalSA ~ Plant + ExpLoc + Plant:ExpLoc, data=data)
+SA_comparison = lm(TotalSA ~ Plant, data=GH_data)
+
 summary(SA_comparison)
 # emmeans(SA_comparison, list(pairwise~Plant), adjust="tukey")
 # TukeyHSD(SA_comparison)
-plot(allEffects(SA_comparison))
+plot(allEffects(SA_comparison), ylab="Floral Surface Area")
 Anova(SA_comparison)
 
 SA_reduced = lm(TotalSA ~ Plant + ExpLoc, data=data)
 
 anova(SA_reduced, SA_comparison)
 
-SA_reduced2 = lm(TotalSA ~ Plant, data=data)
-
-Anova(SA_reduced2)
-anova(SA_reduced2, SA_reduced)
-
-Anova(SA_reduced2)
-summary(SA_reduced2)
+# SA_reduced2 = lm(TotalSA ~ Plant, data=data)
+# 
+# Anova(SA_reduced2)
+# anova(SA_reduced2, SA_reduced)
+# 
+# Anova(SA_reduced2)
+# summary(SA_reduced2)
 
 ##################### 4. MODEL BUILDING WITH LM #################################
 # Individuals that were collected in the field did not have a known parent couple.
 # These individuals were excluded from my LMER as I had the grouping "Couple" -->
 # Repeating the analysis here with a simple lm WITHOUT the "couple" variable
+cohort_lm = lm(RawWeight_day7 ~ Cohort, data=GH_data)
+summary(cohort_lm)
+plot(allEffects(cohort_lm))
+plot(cohort_lm)
 
 lm.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + Cohort + EnclCol, data=GH_data)
 
@@ -192,37 +215,61 @@ lm.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + Cohort + EnclCol, d
 vif(lm.model)
 opar <- par(mfrow = c(2, 2))
 Anova(lm.model, type=3)
+library(knitr)
+kable(lm.model, digits = 3)
+summary(lm.model)
 plot(lm.model)
 
+lm_effects = allEffects(lm.model)
+lm_effects
+plot(lm_effects, ylab = "Weight (g)")
+plot(allEffects(m1)$Plant, )
+summary(lm.model)
+lm_effects
 ## Reduce model to remove insignificant terms, starting with cohort
-reduced_1 = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EnclCol, data=GH_data)
-
-#test to see if more complex model is significantly better at describing the variation
-anova(reduced_1, lm.model) #not significantly better, leave cohort out
-Anova(reduced_1, type=3)
+# reduced_1 = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EnclCol, data=GH_data)
+# 
+# #test to see if more complex model is significantly better at describing the variation
+# anova(reduced_1, lm.model) #not significantly better, leave cohort out
+# Anova(reduced_1, type=3)
 
 # Remove next least significant term (EnclCol)
-reduced_2 = lm(RawWeight_day7~ Plant + Sex + ForewingLength, data=GH_data)
-
-#test to see if more complex is significantly better
-anova(reduced_2, reduced_1) #significantly better, keep the more complex model (reduced 1)
-bestmodel = reduced_1
+# reduced_2 = lm(RawWeight_day7~ Plant + Sex + ForewingLength, data=GH_data)
+# 
+# #test to see if more complex is significantly better
+# anova(reduced_2, reduced_1) #significantly better, keep the more complex model (reduced 1)
+# bestmodel = reduced_1
+bestmodel=lm.model
 Anova(bestmodel, type=3)
-
+summary(bestmodel)
 
 ############ 4.1 MULTIPLE COMPARISONS TEST FOR LM ###################
 
 # Check for significant differences between plant species and their effect on day7 raw weight
 # using a Tukey adjustment for multiple comparisons/hypothesis tests
-m1<-bestmodel
+m1<-lm.model
 library(multcomp)
 #WHICH groups are different from each other
 g<-glht(m1, mcp(Plant="Tukey")); confint(g)
 #OR
 library(emmeans)
 emmeans(m1, list(pairwise~Plant), adjust="tukey")
-
+effects_lm.model = allEffects(m1)
 plot(allEffects(m1))
+plot(allEffects(m1)$Plant, ylab = "Weight (g)", xlab = "Plant")
+str(effects_lm.model)
+ggplot(GH_data, aes(x, y)) +
+  geom_smooth(method = "lm", formula = RawWeight_day7 ~ Plant + Sex + ForewingLength + EmergDate + EnclCol, colour = "black",
+              linetype = 2, fill = "gray80", alpha = 0.2) +
+  geom_rug(sides = "b") +
+  theme_bw() +
+  labs(y = "Weight (g)", x = "Plant",
+       title = "Plant effect plot") +
+  theme(text = element_text(size = 16),
+        plot.margin = margin(50, 50, 50, 50),
+        axis.title.x = element_text(vjust = -8),
+        axis.title.y = element_text(vjust = 10),
+        plot.title = element_text(vjust = 8))
 
 # diagnostic plots
 plot(m1)
@@ -230,7 +277,9 @@ require("lattice")
 qqnorm(resid(m1))
 qqline(resid(m1))
 summary(bestmodel)
+plot_model(bestmodel, type="pred", terms = c("Plant"),ylab="Weight (g)",)
 Anova(bestmodel, type=3)
+ggpredict(lm, terms = c("Plant","RawWeight_day7"))
 
 
 
@@ -271,18 +320,20 @@ anova(encl_reduced3, encl_reduced2) # more complex (with EmergDate) is not signi
 females_data = subset(Field_data,Field_data$Sex == "F")
 
 #### build model using females, without EnclCol
-field_lm = lm(RawWeight_day7~ Plant + ForewingLength + NumButterflies, data=females_data)
-Anova(field_lm)
+females_data$NumButterflies = as.factor(females_data$NumButterflies)
+field_lm = lm(RawWeight_day7~ Plant + ForewingLength + NumButterflies + TotalSA, data=females_data)
+Anova(field_lm, type=3)
 summary(field_lm)
 plot(allEffects(field_lm))
 summary(females_data)
-as.factor(females_data$NumButterflies)
+
 ## remove plant, least significant term, and compare
-field_reduced = lm(RawWeight_day7~ ForewingLength + NumButterflies, data=females_data)
+#field_reduced = lm(RawWeight_day7~ ForewingLength + NumButterflies, data=females_data)
 
-anova(field_reduced, field_lm) #more complex is not significantly better
-Anova(field_reduced) #remove numButterflies
+# anova(field_reduced, field_lm) #more complex is not significantly better
+# Anova(field_reduced) #remove numButterflies
+# 
+# field_reduced2 = lm(RawWeight_day7~ ForewingLength, data=females_data)
+# anova(field_reduced2,field_reduced)
+# Anova(field_reduced2)
 
-field_reduced2 = lm(RawWeight_day7~ ForewingLength, data=females_data)
-anova(field_reduced2,field_reduced)
-Anova(field_reduced2)

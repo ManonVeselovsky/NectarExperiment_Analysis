@@ -65,6 +65,7 @@ experimentdat<-merge(experimentdat, foo2[,c("ID", "Couple", "Cohort", "Plant","E
 
 forewingdat = subset(ForewingMeasurements, select=c("ID", "ForewingLength", "ForewingDamage"))
 experimentdat<-merge(experimentdat, forewingdat[,c("ID", "ForewingLength", "ForewingDamage")], by.x=c("ID"), all=TRUE)
+GH_data = subset(experimentdat, experimentdat$ExpLoc == "GH")
 
 # for butterflies that were weighed while dead, remove those values (i.e., VH23)
 experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
