@@ -4,6 +4,17 @@
 
 # clear the R environment
 rm(list=ls())
+usethis::git_sitrep()
+usethis::use_git_config(
+  user.name = "ManonCV",
+  user.email = "mvese092@uottawa.ca"
+)
+usethis::create_github_token()
+credentials::set_github_pat("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")
+usethis::use_git()
+usethis::use_github()
+usethis::git_vaccinate()
+
 
 #setwd("NectarExperiment_Analysis/")
 
