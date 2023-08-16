@@ -23,9 +23,9 @@ library(ggeffects)
 
 
 # create separate working databases for greenhouse plants, goldenrod (for GH-Field comparison), and field plants
-GH_data = subset(summarydat, summarydat$ExpLoc == "GH")
+GH_data = subset(summarydat, summarydat$ExpLoc == "GH") # data from greenhouse
 GH_F_data = summarydat[which(summarydat$Plant=="SolAlt"),] #all data on goldenrod, for GH-Field comparison
-Field_data = subset(summarydat,summarydat$ExpLoc == "Field")
+Field_data = subset(summarydat,summarydat$ExpLoc == "Field") #data from field
 SolAlt_F_data = subset(Field_data,Field_data$Plant == "SolAlt") #Subset SolAlt in field to check for enclosure effects
 
 
@@ -57,10 +57,10 @@ mygraph
 qqnorm(GH_data$RawWeight_day7)
 qqline(GH_data$RawWeight_day7)
 
-# Shapiro formal test for normality
+# Formal test for normality (Shapiro)
 shapiro.test(GH_data$RawWeight_day7)
 
-summary(GH_data)
+# boxplots of raw weight on day 7 by plant species in the greenhouse
 myplot<-ggplot(data=GH_data, aes(x=Plant, y=RawWeight_day7),na.action=na.exclude)
 myplot+geom_boxplot(notch=TRUE)
 
@@ -73,15 +73,16 @@ myplot+geom_boxplot(notch=TRUE)
 # The a-priori expectation is that they will be correlated, with forewing length the ideal variable
 # as it does not change with adult age. Weights could fluctuate depending on the time they were taken
 # since emergence (metabolism as they have not eaten, and drying time for the fluid they expel
-# as they eclose from their crysalids)
+# as they eclose from their chrysalises)
 
 fwl_day0w_lm = lm(RawWeight_day0 ~ ForewingLength, data=GH_data)
-Anova(fwl_day0w_lm, type=3)# Significantly related, so I will keep forewing length
+Anova(fwl_day0w_lm, type=3)# Significantly related, so I will keep forewing length and not use weight
+plot(allEffects(fwl_day0w_lm))
 summary(fwl_day0w_lm) 
 
 # Estimate the change in raw weight on day 7 of trial based on predictor variables
-lmer.model = lmer(RawWeight_day7~ Plant + Sex + ForewingLength
-                  + EmergDate + Cohort + EnclCol + (1|Couple), data=GH_data)
+lmer.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength
+                  + Cohort + EnclCol + TotalSA, data=GH_data)
 
 #Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
 # GVIF^(1/(2*df)) < 2 acceptable for categorical)
@@ -175,26 +176,22 @@ summary(gh_f_lm)
 
 ################ 3. PLANT SURFACE AREA DIFFERENCES BETWEEN SPECIES ############
 
-# SA_comparison = lm(TotalSA ~ Plant + ExpLoc + Plant:ExpLoc, data=data)
-SA_comparison = lm(TotalSA ~ Plant, data=GH_data)
+########### 3.1 GREENHOUSE COMPARISON
+## Histogram of surface area by plant species
+myplot<-ggplot(data=GH_data, aes(x=Plant, y=log(TotalSA)),na.action=na.exclude)
+myplot+geom_boxplot(notch=TRUE)
 
-summary(SA_comparison)
-# emmeans(SA_comparison, list(pairwise~Plant), adjust="tukey")
-# TukeyHSD(SA_comparison)
-plot(allEffects(SA_comparison), ylab="Floral Surface Area")
-Anova(SA_comparison)
+#Compare surface area of the greenhouse plants
+SA_comparison_GH = lm(TotalSA ~ Plant, data=GH_data)
 
-SA_reduced = lm(TotalSA ~ Plant + ExpLoc, data=data)
+summary(SA_comparison_GH)
+plot(allEffects(SA_comparison_GH), ylab="Floral Surface Area")
+Anova(SA_comparison_GH)
 
-anova(SA_reduced, SA_comparison)
 
-# SA_reduced2 = lm(TotalSA ~ Plant, data=data)
-# 
-# Anova(SA_reduced2)
-# anova(SA_reduced2, SA_reduced)
-# 
-# Anova(SA_reduced2)
-# summary(SA_reduced2)
+########### 3.2 FIELD COMPARISON
+myplot<-ggplot(data=Field_data, aes(x=Plant, y=TotalSA),na.action=na.exclude)
+myplot+geom_boxplot(notch=TRUE)
 
 ##################### 4. MODEL BUILDING WITH LM #################################
 # Individuals that were collected in the field did not have a known parent couple.
@@ -205,13 +202,13 @@ summary(cohort_lm)
 plot(allEffects(cohort_lm))
 plot(cohort_lm)
 
-lm.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + Cohort + EnclCol, data=GH_data)
+lm.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
 
 #Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
 # GVIF^(1/(2*df)) < 2 acceptable for categorical)
 vif(lm.model) #remove emerg date, CORRELATED WITH COHORT
 
-lm.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + Cohort + EnclCol, data=GH_data)
+lm.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
 vif(lm.model)
 opar <- par(mfrow = c(2, 2))
 Anova(lm.model, type=3)
@@ -222,7 +219,7 @@ plot(lm.model)
 
 lm_effects = allEffects(lm.model)
 lm_effects
-plot(lm_effects, ylab = "Weight (g)")
+plot(lm_effects, ylab = "Day 7 Weight (g)")
 plot(allEffects(m1)$Plant, )
 summary(lm.model)
 lm_effects

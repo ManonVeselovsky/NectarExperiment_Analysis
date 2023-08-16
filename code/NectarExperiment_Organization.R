@@ -16,7 +16,7 @@ FloralMeasurements = read.csv("data/FloralMeasurements.csv")
 library(dplyr)
 
 ############ RAW WEIGHTS ##############################
-# Start with a dataframe including only the raw weight at day 0
+# Start with a dataframe that only contains the columns of ID, Trial Day, and Weight
 experimentdat<-subset(TreatmentData, select=c("ID", "TrialDay", "Weight"))
 
 # Keep only rows for weights measured on day 0 (i.e., original weight)
@@ -61,27 +61,31 @@ foo2<-foo2[which(foo2$TrialDay=="0"),]
 experimentdat<-merge(experimentdat, foo2[,c("ID", "Couple", "Cohort", "Plant","ExpLoc","FlowerHeads", "NumButterflies","EnclCol", "Sex", "EmergDate")], by.x=c("ID"), all=TRUE)
 
 
+
 ############ FOREWING MEASUREMENTS ####################3
 
 forewingdat = subset(ForewingMeasurements, select=c("ID", "ForewingLength", "ForewingDamage"))
 experimentdat<-merge(experimentdat, forewingdat[,c("ID", "ForewingLength", "ForewingDamage")], by.x=c("ID"), all=TRUE)
-GH_data = subset(experimentdat, experimentdat$ExpLoc == "GH")
 
 # for butterflies that were weighed while dead, remove those values (i.e., VH23)
 experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
 
 # remove individuals that do not have a day 0 weight
-experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
+# experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
 experimentdat = subset(experimentdat, experimentdat$ID != "VH30")
-
-# remove individuals that do not have a day 5 weight
-experimentdat = subset(experimentdat, experimentdat$ID != "Unknown1")
+# 
+# # remove individuals that do not have a day 5 weight
+# experimentdat = subset(experimentdat, experimentdat$ID != "Unknown1")
 
 # remove individuals that do not have a day 7 weight
 experimentdat = subset(experimentdat, experimentdat$ID != "Jacob8")
 experimentdat = subset(experimentdat, experimentdat$ID != "TWA74")
 experimentdat = subset(experimentdat, experimentdat$ID != "Unknown1")
 experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
+
+
+# remove individuals that do not have the number of flowering heads recorded
+experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
 
 
 
@@ -116,7 +120,6 @@ experimentdat$RelWeightGain_day7<-experimentdat$RawWeightGain_day7/experimentdat
 
 #repeat for day 10
 experimentdat$RelWeightGain_day10<-experimentdat$RawWeightGain_day10/experimentdat$RawWeight_day0
-
 
 
 ############ ADD FLORAL AREA DATA ################
@@ -155,6 +158,8 @@ foo7 <- merge(experimentdat,foo6[,c("SurfaceArea","ExpLoc","Plant")],by=c("Plant
 
 #calculate total SA and add into experimentdat
 experimentdat$TotalSA = foo7$FlowerHeads*foo7$SurfaceArea
+
+
 
 
 ############ FINAL CLEAN-UP #####################
