@@ -4,17 +4,6 @@
 
 # clear the R environment
 rm(list=ls())
-usethis::git_sitrep()
-usethis::use_git_config(
-  user.name = "ManonCV",
-  user.email = "mvese092@uottawa.ca"
-)
-usethis::create_github_token()
-credentials::set_github_pat("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")
-usethis::use_git()
-usethis::use_github()
-usethis::git_vaccinate()
-
 
 #setwd("NectarExperiment_Analysis/")
 
@@ -38,6 +27,39 @@ GH_data = subset(summarydat, summarydat$ExpLoc == "GH") # data from greenhouse
 GH_F_data = summarydat[which(summarydat$Plant=="SolAlt"),] #all data on goldenrod, for GH-Field comparison
 Field_data = subset(summarydat,summarydat$ExpLoc == "Field") #data from field
 SolAlt_F_data = subset(Field_data,Field_data$Plant == "SolAlt") #Subset SolAlt in field to check for enclosure effects
+
+############### Exploration of fat ################
+
+scatterplot(DryFatMass~RawWeight_day7,data=data)
+fat_lm =lm(DryFatMass~RawWeight_day7,data=data)
+summary(fat_lm)
+
+scatterplot(RelDryFat~RawWeight_day7,data=data)
+relfat_lm = lm(RelDryFat~RawWeight_day7,data=data)
+summary(relfat_lm)
+
+scatterplot(RelDryFat~RawWeight_day7,data=data,ylab="Final % body fat",xlab="Final body mass, wet (g)")
+relfat_lm = lm(RelDryFat~RawWeight_day7,data=data)
+summary(relfat_lm)
+
+scatterplot(DryMass~RawWeight_day7,data=data,ylab="Final body mass, dry (g)",xlab="Final body mass, wet (g) (day 7)")
+drymass_lm = lm(DryMass~RawWeight_day7,data=data)
+summary(drymass_lm)
+
+# mpg.model <- lm(data = mtcars, mpg ~ wt + cyl) 
+
+wt.eff <- effect(term = "RawWeight_day7", mod = fat_lm)
+
+wt.model.plot.data <- data.frame(
+  wt.eff$x,
+  eff.lower = wt.eff$lower,
+  eff.upper = wt.eff$upper,
+  eff.fit = wt.eff$fit
+)
+
+ggplot(data=wt.model.plot.data, aes(x = RawWeight_day7)) +
+  geom_ribbon(aes(ymin = eff.lower, ymax = eff.upper), fill = "blue", alpha = 0.3) +
+  geom_line(aes(y = eff.fit), color = "blue")
 
 
 ########## 1. GREEHOUSE DATA ANALYSIS ##############
@@ -76,13 +98,12 @@ myplot<-ggplot(data=GH_data, aes(x=Plant, y=RawWeight_day7),na.action=na.exclude
 myplot+geom_boxplot(notch=TRUE)
 
 
-
-
 #################### 1.2 MODEL BUILDING - LMER ###########################
 
-# Check collinearity of starting weight and forewing length (to see if I need both in the model)
-# The a-priori expectation is that they will be correlated, with forewing length the ideal variable
-# as it does not change with adult age. Weights could fluctuate depending on the time they were taken
+# Check correlation of starting weight and forewing length (to see if I need both in the model)
+# The a-priori expectation is that they will be highly correlated, in which case I think forewing length is
+# the ideal variable to retain as it does not change with adult age or time of day (feeding could change weight slightly).
+# Weights could fluctuate depending on the time they were taken
 # since emergence (metabolism as they have not eaten, and drying time for the fluid they expel
 # as they eclose from their chrysalises)
 
@@ -172,10 +193,6 @@ summary(GH_F_data)
 #Check for normality on raw day 7 weights
 hist(GH_F_data$RawWeight_day7)
 
-#linear mixed effects model to compare GH to field
-#gh_f_lmer = lmer(RawWeight_day7~ Sex + ForewingLength + ExpLoc + (1|Couple), data=GH_F_data)
-#Anova(gh_f_lmer, type=3)
-#plot(allEffects(gh_f_lmer))
 
 ### linear model to compare GH method to field method (ExpLoc)
 gh_f_lm = lm(RawWeight_day7~ Sex + ForewingLength + ExpLoc, data=GH_F_data)
@@ -191,6 +208,11 @@ summary(gh_f_lm)
 ## Histogram of surface area by plant species
 myplot<-ggplot(data=GH_data, aes(x=Plant, y=log(TotalSA)),na.action=na.exclude)
 myplot+geom_boxplot(notch=TRUE)
+stripchart(TotalSA ~ Plant, data=GH_data,              # Data
+                      method = "jitter", # Random noise
+                      pch = 19,          # Pch symbols
+                      col = 4,           # Color of the symbol
+                      add = TRUE) 
 
 #Compare surface area of the greenhouse plants
 SA_comparison_GH = lm(TotalSA ~ Plant, data=GH_data)
@@ -234,19 +256,6 @@ plot(lm_effects, ylab = "Day 7 Weight (g)")
 plot(allEffects(m1)$Plant, )
 summary(lm.model)
 lm_effects
-## Reduce model to remove insignificant terms, starting with cohort
-# reduced_1 = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EnclCol, data=GH_data)
-# 
-# #test to see if more complex model is significantly better at describing the variation
-# anova(reduced_1, lm.model) #not significantly better, leave cohort out
-# Anova(reduced_1, type=3)
-
-# Remove next least significant term (EnclCol)
-# reduced_2 = lm(RawWeight_day7~ Plant + Sex + ForewingLength, data=GH_data)
-# 
-# #test to see if more complex is significantly better
-# anova(reduced_2, reduced_1) #significantly better, keep the more complex model (reduced 1)
-# bestmodel = reduced_1
 bestmodel=lm.model
 Anova(bestmodel, type=3)
 summary(bestmodel)

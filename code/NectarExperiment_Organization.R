@@ -1,6 +1,6 @@
 ### Script to organize and process raw data from 2022 monarch experiment
 ### Written by D. Rivest and M. Veselovsky
-### Last updated 2023-01-12
+### Last updated 2023-08-14
 
 # clear the R environment
 rm(list=ls())
@@ -13,6 +13,7 @@ project_directory = getwd()
 TreatmentData<-read.csv("data/TreatmentData.csv")
 ForewingMeasurements = read.csv("data/ForewingMeasurements.csv")
 FloralMeasurements = read.csv("data/FloralMeasurements.csv")
+FatData = read.csv("data/FatExtractions.csv")
 library(dplyr)
 
 ############ RAW WEIGHTS ##############################
@@ -160,7 +161,10 @@ foo7 <- merge(experimentdat,foo6[,c("SurfaceArea","ExpLoc","Plant")],by=c("Plant
 experimentdat$TotalSA = foo7$FlowerHeads*foo7$SurfaceArea
 
 
-
+################### FAT DATA #################
+experimentdat <- merge(experimentdat,FatData[,c("Dry.Mass","RelDryFat", "DryFatMass","ID")],by.x=c("ID"))
+experimentdat <- experimentdat %>% 
+  rename("DryMass" = "Dry.Mass")
 
 ############ FINAL CLEAN-UP #####################
 
