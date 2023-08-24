@@ -28,23 +28,6 @@ GH_F_data = summarydat[which(summarydat$Plant=="SolAlt"),] #all data on goldenro
 Field_data = subset(summarydat,summarydat$ExpLoc == "Field") #data from field
 SolAlt_F_data = subset(Field_data,Field_data$Plant == "SolAlt") #Subset SolAlt in field to check for enclosure effects
 
-############### Exploration of fat ################
-boxplot(WaterMass~Plant,data=data,ylab="Body water content (g)")
-
-scatterplot(DryFatMass~RawWeight_day7,data=data, ylab="Body fat (g)",xlab="Wet body weight (g)")
-fat_lm =lm(DryFatMass~RawWeight_day7,data=data)
-summary(fat_lm)
-
-
-scatterplot(RelDryFat~RawWeight_day7,data=data,ylab="% body fat",xlab="Wet body weight (g)")
-relfat_lm = lm(RelDryFat~RawWeight_day7,data=data)
-summary(relfat_lm)
-
-scatterplot(DryMass~RawWeight_day7,data=data,ylab="Dry body weight (g)",xlab="Wet body weight (g)")
-drymass_lm = lm(DryMass~RawWeight_day7,data=data)
-summary(drymass_lm)
-
-scatterplot(DryFatMass~DryLeanMass,data=data,ylab="Body fat (g)",xlab="Dry body weight (g)")
 
 
 ########## 1. GREEHOUSE DATA ANALYSIS ##############
@@ -344,24 +327,74 @@ field_fat = lm(RawWeight_day7~ Plant + ForewingLength + NumButterflies + TotalSA
 
 
 
+############### Exploration of fat ################
+opar <- par(mfrow = c(1, 1))
+boxplot(WaterMass~Plant,data=data,ylab="Body water content (g)")
+water_lm = lm(WaterMass~Plant,data=data)
+summary(water_lm)
+
+scatterplot(DryFatMass~RawWeight_day7,data=data, ylab="Body fat (g)",xlab="Body mass - wet (g)")
+fat_lm =lm(DryFatMass~RawWeight_day7,data=data)
+summary(fat_lm)
+
+scatterplot(RelDryFat~RawWeight_day7,data=data,ylab="% body fat",xlab="Body mass - dry (g)")
+scatterplot(RelDryFat~DryMass,data=data,ylab="% body fat",xlab="Body mass - dry (g)")
+
+relfat_lm = lm(RelDryFat~RawWeight_day7,data=data)
+summary(relfat_lm)
+
+scatterplot(DryMass~RawWeight_day7,data=data,ylab="Dry body mass (g)",xlab="Body mass - wet (g)")
+drymass_lm = lm(DryMass~RawWeight_day7,data=data)
+summary(drymass_lm)
+
+scatterplot(DryFatMass~DryLeanMass,data=data,ylab="Body fat (g)",xlab="Lean mass (g)")
+
+scatterplot(DryMass~EmergDate,data=data)
 
 
-
-
-########################## FAT COMPARISONS ####################################
+########################## GREENHOUSE FAT MODELS ####################################
 gh_fat_lm = lm(DryFatMass~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+gh_fat_lm_log = lm(log(DryFatMass)~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+gh_relfat_lm = lm(RelDryFat~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
 
+#Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
+# GVIF^(1/(2*df)) < 2 acceptable for categorical)
+vif(gh_fat_lm)
+
+
+plot(gh_fat_lm)
+plot(gh_fat_lm_log)
+
+plot(gh_relfat_lm)
+
+opar <- par(mfrow = c(2, 2))
+plot(gh_fat_lm)
+plot(gh_fat_lm_log)
 Anova(gh_fat_lm)
+Anova(gh_fat_lm_log)
+
+summary(gh_fat_lm_log)
+
 
 plot(allEffects(gh_fat_lm))
-plot(allEffects(rawweight_model))
+plot(allEffects(gh_fat_lm_log))
+Anova(gh_fat_lm_log)
 
-m1<-gh_fat_lm
-library(multcomp)
+predict_plant = predictorEffect("Plant",gh_fat_lm_log)
+predict_plant = exp(predict_plant)
+
+head(predict_plant)
+predict_plant$fit = exp(predict_plant$fit)
+predict_plant$upper=exp(predict_plant$upper)
+predict_plant$lower=exp(predict_plant$lower)
+plot(predict_plant,ylab ="Fat mass (g)")
+plot(allEffects(gh_fat_lm_log))
+
+str(predict_plant)
+
 library(emmeans)
 
-emmeans(rawweight_model, list(pairwise~Plant), adjust="tukey")
-emmeans(gh_fat_lm, list(pairwise~Plant), adjust="tukey")
+emmeans(gh_fat_lm_log, list(pairwise~Plant), adjust="tukey")
 
 
 
@@ -371,6 +404,27 @@ plot(allEffects(rawweight_model))
 plot(rawweight_model)
 qqnorm(resid(rawweight_model))
 qqline(resid(rawweight_model))
+
+
+################### gamma 
+gh_fat_lm_gm = glm(DryFatMass~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data,family="Gamma")
+opar <- par(mfrow = c(2, 2))
+plot(gh_fat_lm_gm)
+
+Anova(gh_fat_lm_gm)
+summary(gh_fat_lm_gm)
+plot(allEffects(gh_fat_lm_gm))
+emmeans(gh_fat_lm_gm, list(pairwise~Plant), adjust="tukey")
+
+########## relative fat content (%)
+gh_relfat_lm = lm(RelDryFat~ Plant + EmergDate + TotalSA, data=GH_data)
+vif(gh_relfat_lm)
+Anova(gh_relfat_lm)
+
+library(multcomp)
+library(emmeans)
+
+emmeans(gh_relfat_lm, list(pairwise~Plant), adjust="tukey")
 
 
 
