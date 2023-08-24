@@ -29,37 +29,22 @@ Field_data = subset(summarydat,summarydat$ExpLoc == "Field") #data from field
 SolAlt_F_data = subset(Field_data,Field_data$Plant == "SolAlt") #Subset SolAlt in field to check for enclosure effects
 
 ############### Exploration of fat ################
+boxplot(WaterMass~Plant,data=data,ylab="Body water content (g)")
 
-scatterplot(DryFatMass~RawWeight_day7,data=data)
+scatterplot(DryFatMass~RawWeight_day7,data=data, ylab="Body fat (g)",xlab="Wet body weight (g)")
 fat_lm =lm(DryFatMass~RawWeight_day7,data=data)
 summary(fat_lm)
 
-scatterplot(RelDryFat~RawWeight_day7,data=data)
+
+scatterplot(RelDryFat~RawWeight_day7,data=data,ylab="% body fat",xlab="Wet body weight (g)")
 relfat_lm = lm(RelDryFat~RawWeight_day7,data=data)
 summary(relfat_lm)
 
-scatterplot(RelDryFat~RawWeight_day7,data=data,ylab="Final % body fat",xlab="Final body mass, wet (g)")
-relfat_lm = lm(RelDryFat~RawWeight_day7,data=data)
-summary(relfat_lm)
-
-scatterplot(DryMass~RawWeight_day7,data=data,ylab="Final body mass, dry (g)",xlab="Final body mass, wet (g) (day 7)")
+scatterplot(DryMass~RawWeight_day7,data=data,ylab="Dry body weight (g)",xlab="Wet body weight (g)")
 drymass_lm = lm(DryMass~RawWeight_day7,data=data)
 summary(drymass_lm)
 
-# mpg.model <- lm(data = mtcars, mpg ~ wt + cyl) 
-
-wt.eff <- effect(term = "RawWeight_day7", mod = fat_lm)
-
-wt.model.plot.data <- data.frame(
-  wt.eff$x,
-  eff.lower = wt.eff$lower,
-  eff.upper = wt.eff$upper,
-  eff.fit = wt.eff$fit
-)
-
-ggplot(data=wt.model.plot.data, aes(x = RawWeight_day7)) +
-  geom_ribbon(aes(ymin = eff.lower, ymax = eff.upper), fill = "blue", alpha = 0.3) +
-  geom_line(aes(y = eff.fit), color = "blue")
+scatterplot(DryFatMass~DryLeanMass,data=data,ylab="Body fat (g)",xlab="Dry body weight (g)")
 
 
 ########## 1. GREEHOUSE DATA ANALYSIS ##############
@@ -113,8 +98,9 @@ plot(allEffects(fwl_day0w_lm))
 summary(fwl_day0w_lm) 
 
 # Estimate the change in raw weight on day 7 of trial based on predictor variables
-lmer.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength
-                  + Cohort + EnclCol + TotalSA, data=GH_data)
+lmer.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+
+rawweight_model=lmer.model
 
 #Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
 # GVIF^(1/(2*df)) < 2 acceptable for categorical)
@@ -344,6 +330,8 @@ summary(field_lm)
 plot(allEffects(field_lm))
 summary(females_data)
 
+field_fat = lm(RawWeight_day7~ Plant + ForewingLength + NumButterflies + TotalSA, data=females_data)
+
 ## remove plant, least significant term, and compare
 #field_reduced = lm(RawWeight_day7~ ForewingLength + NumButterflies, data=females_data)
 
@@ -353,4 +341,36 @@ summary(females_data)
 # field_reduced2 = lm(RawWeight_day7~ ForewingLength, data=females_data)
 # anova(field_reduced2,field_reduced)
 # Anova(field_reduced2)
+
+
+
+
+
+
+
+########################## FAT COMPARISONS ####################################
+gh_fat_lm = lm(DryFatMass~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+
+Anova(gh_fat_lm)
+
+plot(allEffects(gh_fat_lm))
+plot(allEffects(rawweight_model))
+
+m1<-gh_fat_lm
+library(multcomp)
+library(emmeans)
+
+emmeans(rawweight_model, list(pairwise~Plant), adjust="tukey")
+emmeans(gh_fat_lm, list(pairwise~Plant), adjust="tukey")
+
+
+
+plot(allEffects(rawweight_model))
+
+# diagnostic plots
+plot(rawweight_model)
+qqnorm(resid(rawweight_model))
+qqline(resid(rawweight_model))
+
+
 
