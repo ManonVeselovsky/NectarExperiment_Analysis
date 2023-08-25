@@ -20,6 +20,7 @@ library(sjPlot)
 library(sjmisc)
 library(ggplot2)
 library(ggeffects)
+library(ggbeeswarm)
 
 
 # create separate working databases for greenhouse plants, goldenrod (for GH-Field comparison), and field plants
@@ -136,13 +137,12 @@ plot(allEffects(bestmodel))
 
 
 ############ 1.3 Multiple comparisons test
-m1<-bestmodel
-Anova(bestmodel)
-library(multcomp)
-#WHICH groups are different from each other
-g<-glht(m1, mcp(Plant="Tukey")); confint(g)
+# m1<-bestmodel
+# Anova(bestmodel)
+# library(multcomp)
+# #WHICH groups are different from each other
+# g<-glht(m1, mcp(Plant="Tukey")); confint(g)
 #OR
-library(emmeans)
 emmeans(m1, list(pairwise~Plant), adjust="tukey")
 
 plot(allEffects(m1))
@@ -173,7 +173,7 @@ summary(gh_f_lm)
 
 ################ 3. PLANT SURFACE AREA DIFFERENCES BETWEEN SPECIES ############
 
-########### 3.1 GREENHOUSE COMPARISON
+########### 3.1 SA - GREENHOUSE COMPARISON
 ## Histogram of surface area by plant species
 myplot<-ggplot(data=GH_data, aes(x=Plant, y=log(TotalSA)),na.action=na.exclude)
 myplot+geom_boxplot(notch=TRUE)
@@ -183,93 +183,42 @@ stripchart(TotalSA ~ Plant, data=GH_data,              # Data
                       col = 4,           # Color of the symbol
                       add = TRUE) 
 
-#Compare surface area of the greenhouse plants
+#### Compare surface area of the greenhouse plants
+## scatter plot by plant species
+ggplot(data = GH_data) +
+  aes(y = Plant, x = log(TotalSA)) +
+  geom_beeswarm() +
+  coord_flip()
+boxplot(TotalSA~Plant,data=GH_data)
+#Model 
 SA_comparison_GH = lm(TotalSA ~ Plant, data=GH_data)
-
 summary(SA_comparison_GH)
+
+#model effects
 plot(allEffects(SA_comparison_GH), ylab="Floral Surface Area")
 Anova(SA_comparison_GH)
 
 
-########### 3.2 FIELD COMPARISON
+########### 3.2 SA - FIELD SPECIES
+ggplot(data = Field_data) +
+  aes(y = Plant, x = TotalSA) +
+  geom_beeswarm() +
+  coord_flip()
+
+ggplot(data = Field_data) +
+  aes(y = Plant, x = log(TotalSA)) +
+  geom_beeswarm() +
+  coord_flip()
+
 myplot<-ggplot(data=Field_data, aes(x=Plant, y=TotalSA),na.action=na.exclude)
 myplot+geom_boxplot(notch=TRUE)
 
-##################### 4. MODEL BUILDING WITH LM #################################
-# Individuals that were collected in the field did not have a known parent couple.
-# These individuals were excluded from my LMER as I had the grouping "Couple" -->
-# Repeating the analysis here with a simple lm WITHOUT the "couple" variable
-cohort_lm = lm(RawWeight_day7 ~ Cohort, data=GH_data)
-summary(cohort_lm)
-plot(allEffects(cohort_lm))
-plot(cohort_lm)
-
-lm.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
-
-#Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
-# GVIF^(1/(2*df)) < 2 acceptable for categorical)
-vif(lm.model) #remove emerg date, CORRELATED WITH COHORT
-
-lm.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
-vif(lm.model)
-opar <- par(mfrow = c(2, 2))
-Anova(lm.model, type=3)
-library(knitr)
-kable(lm.model, digits = 3)
-summary(lm.model)
-plot(lm.model)
-
-lm_effects = allEffects(lm.model)
-lm_effects
-plot(lm_effects, ylab = "Day 7 Weight (g)")
-plot(allEffects(m1)$Plant, )
-summary(lm.model)
-lm_effects
-bestmodel=lm.model
-Anova(bestmodel, type=3)
-summary(bestmodel)
-
-############ 4.1 MULTIPLE COMPARISONS TEST FOR LM ###################
-
-# Check for significant differences between plant species and their effect on day7 raw weight
-# using a Tukey adjustment for multiple comparisons/hypothesis tests
-m1<-lm.model
-library(multcomp)
-#WHICH groups are different from each other
-g<-glht(m1, mcp(Plant="Tukey")); confint(g)
-#OR
-library(emmeans)
-emmeans(m1, list(pairwise~Plant), adjust="tukey")
-effects_lm.model = allEffects(m1)
-plot(allEffects(m1))
-plot(allEffects(m1)$Plant, ylab = "Weight (g)", xlab = "Plant")
-str(effects_lm.model)
-ggplot(GH_data, aes(x, y)) +
-  geom_smooth(method = "lm", formula = RawWeight_day7 ~ Plant + Sex + ForewingLength + EmergDate + EnclCol, colour = "black",
-              linetype = 2, fill = "gray80", alpha = 0.2) +
-  geom_rug(sides = "b") +
-  theme_bw() +
-  labs(y = "Weight (g)", x = "Plant",
-       title = "Plant effect plot") +
-  theme(text = element_text(size = 16),
-        plot.margin = margin(50, 50, 50, 50),
-        axis.title.x = element_text(vjust = -8),
-        axis.title.y = element_text(vjust = 10),
-        plot.title = element_text(vjust = 8))
-
-# diagnostic plots
-plot(m1)
-require("lattice")
-qqnorm(resid(m1))
-qqline(resid(m1))
-summary(bestmodel)
-plot_model(bestmodel, type="pred", terms = c("Plant"),ylab="Weight (g)",)
-Anova(bestmodel, type=3)
-ggpredict(lm, terms = c("Plant","RawWeight_day7"))
+SA_field_lm = lm(TotalSA~Plant,data=Field_data)
+Anova(SA_field_lm)
+plot(allEffects(SA_field_lm))
 
 
-
-###################### 5. FIELD PLANTS & COMPARISONS #####################
+###################### 4 FIELD PLANTS & COMPARISONS #####################
 
 # Because greenhouse SolAlt (Tall goldenrod) had a different effect from field SolAlt,
 # I will specifically compare the two field species (EutMac/Joe-pye weed & SolAlt)
@@ -277,7 +226,7 @@ ggpredict(lm, terms = c("Plant","RawWeight_day7"))
 summary(Field_data)
 
 
-##################### 5.1 CHECK FOR ENCLOSURE EFFECTS ####################
+##################### 4.1 CHECK FOR ENCLOSURE EFFECTS ####################
 # Check for enclosure effects with just SolAlt data (SolAlt had two different types
 # of enclosures in the trial)
 encl_lm = lm(RawWeight_day7~ Sex + ForewingLength + EmergDate + EnclCol, data=SolAlt_F_data)
@@ -296,7 +245,7 @@ encl_reduced3 = lm(RawWeight_day7~ ForewingLength, data=SolAlt_F_data)
 anova(encl_reduced3, encl_reduced2) # more complex (with EmergDate) is not significantly better
 
 
-#################### 5.2 COMPARE FIELD SPECIES ########################
+#################### 4.2 COMPARE FIELD SPECIES ########################
 # I had a limited number of field plots (only 3 plots of JPW)
 # so the first set of field trials had 2 females per enclosure for EutMac,
 # and a mix of double females, single males, and single females for SolAlt.
@@ -327,18 +276,31 @@ field_fat = lm(RawWeight_day7~ Plant + ForewingLength + NumButterflies + TotalSA
 
 
 
-############### Exploration of fat ################
+############### 5. FAT EXTRACTION ANALYSES ################
+
+############### 5.1 Exploration ##################################
 opar <- par(mfrow = c(1, 1))
 boxplot(WaterMass~Plant,data=data,ylab="Body water content (g)")
 water_lm = lm(WaterMass~Plant,data=data)
 summary(water_lm)
 
+ggplot(data, aes(x = Plant, y = WaterMass, color = ExpLoc)) +  # ggplot function
+  geom_point()
+
 scatterplot(DryFatMass~RawWeight_day7,data=data, ylab="Body fat (g)",xlab="Body mass - wet (g)")
 fat_lm =lm(DryFatMass~RawWeight_day7,data=data)
 summary(fat_lm)
 
+ggplot(data, aes(x = RawWeight_day7, y = log(DryFatMass), color = ExpLoc)) +  # ggplot function
+  geom_point()+
+  geom_smooth(method=lm , color="red", se=TRUE) +
+
 scatterplot(RelDryFat~RawWeight_day7,data=data,ylab="% body fat",xlab="Body mass - dry (g)")
 scatterplot(RelDryFat~DryMass,data=data,ylab="% body fat",xlab="Body mass - dry (g)")
+
+ggplot(data, aes(x = Plant, y = RelDryFat, color = ExpLoc)) +  # ggplot function
+  geom_point()
+
 
 relfat_lm = lm(RelDryFat~RawWeight_day7,data=data)
 summary(relfat_lm)
@@ -352,7 +314,7 @@ scatterplot(DryFatMass~DryLeanMass,data=data,ylab="Body fat (g)",xlab="Lean mass
 scatterplot(DryMass~EmergDate,data=data)
 
 
-########################## GREENHOUSE FAT MODELS ####################################
+########################## 5.2 GREENHOUSE FAT MODELS ####################################
 gh_fat_lm = lm(DryFatMass~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
 gh_fat_lm_log = lm(log(DryFatMass)~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
 gh_relfat_lm = lm(RelDryFat~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
@@ -428,3 +390,17 @@ emmeans(gh_relfat_lm, list(pairwise~Plant), adjust="tukey")
 
 
 
+######################## 5.3 FIELD FAT ANALYSIS #######################
+opar <- par(mfrow = c(2, 2))
+field_fat_lm = lm(DryFatMass~ EmergDate + TotalSA, data=Field_data)
+Anova(field_fat_lm)
+plot(allEffects(field_fat_lm))
+vif(field_fat_lm)
+
+opar <- par(mfrow = c(2, 2))
+plot(field_fat_lm)
+
+field_fat_glm = glm(DryFatMass~ EmergDate, data=Field_data,family="Gamma")
+Anova(field_fat_glm)
+
+plot(allEffects(field_fat_glm))
