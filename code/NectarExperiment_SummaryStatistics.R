@@ -36,8 +36,8 @@ SolAlt_F_data = subset(Field_data,Field_data$Plant == "SolAlt") #Subset SolAlt i
 opar <- par(mfrow = c(1, 1))
 
 #Check for normality of the butterflies raw weights on day 7 of their respective trials
-mygraph <- ggplot(GH_data, aes(x = RawWeight_day7))
-mygraph <- mygraph +
+weight_distr <- ggplot(GH_data, aes(x = RawWeight_day7))
+weight_distr <- weight_distr +
   # add data density smooth
   geom_density() +
   # add rug (bars at the bottom of the plot)
@@ -55,16 +55,43 @@ mygraph <- mygraph +
                 color = "red")
 
 #display graph
-mygraph
+weight_distr
 qqnorm(GH_data$RawWeight_day7)
 qqline(GH_data$RawWeight_day7)
 
+
+#Check for normality of the butterflies raw weights on day 7 of their respective trials
+fat_distr <- ggplot(GH_data, aes(x = DryFatMass))
+fat_distr <- fat_distr +
+  # add data density smooth
+  geom_density() +
+  # add rug (bars at the bottom of the plot)
+  geom_rug() +
+  # add black semitransparent histogram
+  geom_histogram(aes(y = ..density..),
+                 color = "black",
+                 alpha = 0.3) +
+  # add normal curve in red, with mean and sd from fklength
+  stat_function(fun = dnorm,
+                args = list(
+                  mean = mean(GH_data$DryFatMass),
+                  sd = sd(GH_data$DryFatMass)
+                ),
+                color = "red")
+
+#display graph
+fat_distr
+qqnorm(GH_data$DryFatMass)
+
+
+
 # Formal test for normality (Shapiro)
 shapiro.test(GH_data$RawWeight_day7)
+shapiro.test(GH_data$DryFatMass)
 
 # boxplots of raw weight on day 7 by plant species in the greenhouse
 myplot<-ggplot(data=GH_data, aes(x=Plant, y=RawWeight_day7),na.action=na.exclude)
-myplot+geom_boxplot(notch=TRUE)
+myplot+geom_boxplot(notch=FALSE)
 
 
 #################### 1.2 MODEL BUILDING - LMER ###########################
@@ -82,28 +109,28 @@ plot(allEffects(fwl_day0w_lm))
 summary(fwl_day0w_lm) 
 
 # Estimate the change in raw weight on day 7 of trial based on predictor variables
-lmer.model = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+weight_lm = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
 
-rawweight_model=lmer.model
+rawweight_model=weight_lm
 
 #Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
 # GVIF^(1/(2*df)) < 2 acceptable for categorical)
-vif(lmer.model) #all good
-Anova(lmer.model, type=3)
-summary(lmer.model)
-plot(lmer.model)
-plot(lmer.model, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,xlab="Fitted values",ylab="Standardised residuals")
+vif(weight_lm) #all good
+Anova(weight_lm, type=3)
+summary(weight_lm)
+plot(weight_lm)
+plot(weight_lm, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,xlab="Fitted values",ylab="Standardised residuals")
 
-effects_info = allEffects(lmer.model)
+effects_info = allEffects(weight_lm)
 effects_info
 plot(effects_info)
-#plot(lmer.model, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,col=GH_data$Couple,xlab="Fitted values",ylab="Standardised residuals")
+#plot(weight_lm, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,col=GH_data$Couple,xlab="Fitted values",ylab="Standardised residuals")
 
 ## Reduce model to remove insignificant terms, starting with cohort
 # reduced_1 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + EnclCol + (1|Couple), data=GH_data)
 # 
 # #test to see if more complex model is significantly better at describing the variation
-# anova(reduced_1, lmer.model) #not significantly better, leave cohort out
+# anova(reduced_1, weight_lm) #not significantly better, leave cohort out
 # Anova(reduced_1, type=3)
 # 
 # # Remove next least significant term (EmergDate)
@@ -120,12 +147,12 @@ plot(effects_info)
 
 #more complex is significantly better, keep reduced_2
 # bestmodel = reduced_2
-bestmodel = lmer.model
+bestmodel = weight_lm
 Anova(bestmodel, type=3)
 summary(bestmodel)
 plot(allEffects(bestmodel))
 #library(MuMIn)
-#dd <- dredge(lmer.model)
+#dd <- dredge(weight_lm)
  
 # # get models within 4 units of AICc from the best model
 # top.models.1 <- get.models(dd, subset = delta < 4)
@@ -145,14 +172,6 @@ plot(allEffects(bestmodel))
 #OR
 emmeans(m1, list(pairwise~Plant), adjust="tukey")
 
-plot(allEffects(m1))
-
-# diagnostic plots
-plot(m1)
-qqnorm(resid(m1))
-qqline(resid(m1))
-require("lattice")
-qqmath(m1,id=0.05)
 
 ######## 2. COMPARISON OF GH TO FIELD DATA (USING GOLDENROD) ##############
 #Create a database of field and gh goldenrod to compare experiments
@@ -276,7 +295,7 @@ field_fat = lm(RawWeight_day7~ Plant + ForewingLength + NumButterflies + TotalSA
 
 
 
-############### 5. FAT EXTRACTION ANALYSES ################
+############### 5. FAT EXTRACTION ANALYSES ##########################
 
 ############### 5.1 Exploration ##################################
 opar <- par(mfrow = c(1, 1))
@@ -345,14 +364,14 @@ Anova(gh_fat_lm_log)
 predict_plant = predictorEffect("Plant",gh_fat_lm_log)
 predict_plant = exp(predict_plant)
 
-head(predict_plant)
+str(predict_plant)
 predict_plant$fit = exp(predict_plant$fit)
 predict_plant$upper=exp(predict_plant$upper)
 predict_plant$lower=exp(predict_plant$lower)
 plot(predict_plant,ylab ="Fat mass (g)")
 plot(allEffects(gh_fat_lm_log))
 
-str(predict_plant)
+
 
 library(emmeans)
 
@@ -375,16 +394,34 @@ plot(gh_fat_lm_gm)
 
 Anova(gh_fat_lm_gm)
 summary(gh_fat_lm_gm)
-plot(allEffects(gh_fat_lm_gm))
+pred_gh_fat_gm=allEffects(gh_fat_lm_gm)
+
+pred_gh_fat_gm$fit = exp(pred_gh_fat_gm$fit)
+pred_gh_fat_gm$upper=exp(pred_gh_fat_gm$upper)
+pred_gh_fat_gm$lower=exp(pred_gh_fat_gm$lower)
+
+plot(pred_gh_fat_gm)
 emmeans(gh_fat_lm_gm, list(pairwise~Plant), adjust="tukey")
+
+## Plot of effects using ggplot glm
+ggplot(GH_data, aes(EmergDate, DryFatMass)) + 
+  geom_smooth(method = "glm", formula = DryFatMass~ Plant + Sex + ForewingLength + EmergDate + TotalSA, colour = "black",
+              linetype = 2, fill = "gray80", alpha = 0.2,
+              method.args = list(family = gamma)) +
+  geom_rug(sides = "b") +
+  theme_bw() +
+  labs(y = "Fat weight (g)", x = "Plant") +
+  theme(text = element_text(size = 16),
+        plot.margin = margin(50, 50, 50, 50),
+        axis.title.x = element_text(vjust = -8),
+        axis.title.y = element_text(vjust = 10),
+        plot.title = element_text(vjust = 8))
+
 
 ########## relative fat content (%)
 gh_relfat_lm = lm(RelDryFat~ Plant + EmergDate + TotalSA, data=GH_data)
 vif(gh_relfat_lm)
 Anova(gh_relfat_lm)
-
-library(multcomp)
-library(emmeans)
 
 emmeans(gh_relfat_lm, list(pairwise~Plant), adjust="tukey")
 
