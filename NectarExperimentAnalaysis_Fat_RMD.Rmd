@@ -1,0 +1,101 @@
+---
+title: "NectarExperiment_Fat_RMD"
+output: html_document
+date: "2023-09-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+### Statistical analysis script
+### Written by M. Veselovsky
+### Last modified 2023-09-11
+
+#Load data and libraries
+summarydat<-read.csv("processed/summarydat.csv")
+data = summarydat
+library(lmerTest)
+library(car)
+library(effects)
+library(ggplot2)
+library(emmeans)
+library(multcomp)
+library(sjPlot)
+library(sjmisc)
+library(ggplot2)
+library(ggeffects)
+library(ggbeeswarm)
+library(performance) #for check_model() assumptions function
+
+
+# create separate working databases for greenhouse plants, goldenrod (for GH-Field comparison), and field plants
+GH_data = subset(summarydat, summarydat$ExpLoc == "GH") # data from greenhouse
+GH_F_data = summarydat[which(summarydat$Plant=="SolAlt"),] #all data on goldenrod, for GH-Field comparison
+Field_data = subset(summarydat,summarydat$ExpLoc == "Field") #data from field
+SolAlt_F_data = subset(Field_data,Field_data$Plant == "SolAlt") #Subset SolAlt in field to check for enclosure effects
+```
+
+## Monarch butterfly fat and protein analysis
+
+#### Individual monarch butterflies were raised on one of six plant species for 7 days in individual enclosures. Butterflies were then frozen and fat + lean protein mass determined.
+#### Forewing length (size of the individual), the emergence date (the julian date the butterfly emerged and began its trial), total surface area of the flowers in the enclosure on the day the butterfly began its trial, are all important variables to include in the model.
+#### Per Brower, 2006, a sample of over 700 butterflies showed no sex differences in migrant monarchs, so I will not include sex in the model here 
+
+####Data appears non-normal, trying a simple lm for the fat mass of the butterfly, Log10 of the fat mass, and a gamma distribution.
+```{r}
+########################## 5.2 GREENHOUSE FAT MODELS ####################################
+gh_fat_lm = lm(DryFatMass~ Plant + ForewingLength + EmergDate + TotalSA, data=GH_data)
+gh_fat_lm_log = lm(log(DryFatMass)~ Plant + ForewingLength + EmergDate + TotalSA, data=GH_data)
+gh_fat_lm_gm = glm(DryFatMass ~ Plant + ForewingLength + EmergDate + TotalSA, data=GH_data,family="Gamma")
+
+```
+
+#### Check model assumptions (VIF values, heteroscedasticity, etc.)
+```{r}
+
+opar <- par(mfrow = c(2, 2))
+plot(gh_fat_lm) #Diagnostic plots for the simple linear model
+plot(gh_fat_lm_log) #diagnostic plots for the log10(y) model
+plot(gh_fat_lm_gm) #diagnostic plots for the gamma distribution glm
+
+check_model(gh_fat_lm) #Diagnostic plots for the simple linear model
+check_model(gh_fat_lm_log)#diagnostic plots for the log10(y) model
+check_model(gh_fat_lm_gm)#diagnostic plots for the gamma distribution glm
+
+
+```
+
+####Predictions:
+```{r}
+Anova(gh_fat_lm)
+Anova(gh_fat_lm_log)
+Anova(gh_fat_lm_gm)
+
+pred_gh_fat_lm=allEffects(gh_fat_lm)
+pred_gh_fat_log=allEffects(gh_fat_lm_log)
+pred_gh_fat_gm=allEffects(gh_fat_lm_gm)
+
+summary(gh_fat_lm)
+summary(gh_fat_lm_log)
+summary(gh_fat_lm_gm)
+
+pred_gh_fat_lm=allEffects(gh_fat_lm)
+pred_gh_fat_log=allEffects(gh_fat_lm_log)
+pred_gh_fat_gm=allEffects(gh_fat_lm_gm)
+
+plot(pred_gh_fat_lm)
+plot(pred_gh_fat_log)
+plot(pred_gh_fat_gm)
+
+```
+
+#### Weird phenomenon with gamma - not displaying a scale for the y-axis. Not sure if gamma can be used for categorical variables
+```{r}
+plot(pred_gh_fat_gm$EmergDate)
+plot(pred_gh_fat_gm$Plant)
+### Weird stuff happening with the plant predicted effect (doesn't have numeric scale for y-axis)
+str(pred_gh_fat_gm$Plant)
+str(pred_gh_fat_gm$Plant$response)
+str(pred_gh_fat_gm$EmergDate$response)
+
+```
+
