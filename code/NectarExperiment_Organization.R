@@ -63,18 +63,18 @@ experimentdat<-merge(experimentdat, foo2[,c("ID", "Couple", "Cohort", "Plant","E
 
 
 
-############ FOREWING MEASUREMENTS ####################3
+############ FOREWING MEASUREMENTS ###################
 
 forewingdat = subset(ForewingMeasurements, select=c("ID", "ForewingLength", "ForewingDamage"))
 experimentdat<-merge(experimentdat, forewingdat[,c("ID", "ForewingLength", "ForewingDamage")], by.x=c("ID"), all=TRUE)
 
-# for butterflies that were weighed while dead, remove those values (i.e., VH23)
+# for butterflies that were weighed while dead (see notes on raw datasheet), remove those values
 experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
 
-# remove individuals that do not have a day 0 weight
+# # remove individuals that do not have a day 0 weight
 # experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
-experimentdat = subset(experimentdat, experimentdat$ID != "VH30")
-# 
+# experimentdat = subset(experimentdat, experimentdat$ID != "VH30")
+
 # # remove individuals that do not have a day 5 weight
 # experimentdat = subset(experimentdat, experimentdat$ID != "Unknown1")
 
@@ -88,14 +88,15 @@ experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
 # remove individuals that do not have the number of flowering heads recorded
 experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
 
-
+#Add a column for the day a butterfly was frozen (to account for individuals frozen on day 10)
+experimentdat$FreezeDay="7"
+experimentdat$FreezeDay[experimentdat$RawWeight_day10!="NA"]<-"10"
 
 ############ RAW WEIGHT GAIN
-#add a column for raw weight gain on day 0 (i.e., 0!), which is just the difference
-experimentdat$RawWeightGain_day0 <- 0
 
-#Repeat for day1
+#Raw weight gain day 1 calculation (Day 1 weight minus day 0 weight)
 experimentdat$RawWeightGain_day1 <- experimentdat$RawWeight_day1-experimentdat$RawWeight_day0
+
 #repeat for day 5
 experimentdat$RawWeightGain_day5 <- experimentdat$RawWeight_day5-experimentdat$RawWeight_day0
 
@@ -157,8 +158,11 @@ colnames(foo6)[colnames(foo6) == "Species"] ="Plant"
 # Merge average surface area into temp database of master sheet
 foo7 <- merge(experimentdat,foo6[,c("SurfaceArea","ExpLoc","Plant")],by=c("Plant","ExpLoc"))
 
-#calculate total SA and add into experimentdat
-experimentdat$TotalSA = foo7$FlowerHeads*foo7$SurfaceArea
+#Calculate the total SA by multiplying the number of flowering heads by the average SA of a flowering head for that species
+foo7$TotalSA = foo7$FlowerHeads*foo7$SurfaceArea
+
+# Merge the TotaSA column into the processed database
+experimentdat <- merge(experimentdat,foo7[,c("TotalSA","ID")],by=c("ID"))
 
 
 ################### FAT DATA #################

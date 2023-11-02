@@ -13,14 +13,14 @@ data = summarydat
 library(lmerTest)
 library(car)
 library(effects)
-require(ggplot2)
+library(ggplot2)
 library(emmeans)
 library(multcomp)
 library(sjPlot)
 library(sjmisc)
-library(ggplot2)
 library(ggeffects)
 library(ggbeeswarm)
+library(performance) #for check_model() assumptions function
 
 
 # create separate working databases for greenhouse plants, goldenrod (for GH-Field comparison), and field plants
@@ -60,7 +60,7 @@ qqnorm(GH_data$RawWeight_day7)
 qqline(GH_data$RawWeight_day7)
 
 
-#Check for normality of the butterflies raw weights on day 7 of their respective trials
+#Check for normality of fat weight in butterflies after trial finished
 fat_distr <- ggplot(GH_data, aes(x = DryFatMass))
 fat_distr <- fat_distr +
   # add data density smooth
@@ -82,16 +82,28 @@ fat_distr <- fat_distr +
 #display graph
 fat_distr
 qqnorm(GH_data$DryFatMass)
-
+qqline(GH_data$DryFatMass)
 
 
 # Formal test for normality (Shapiro)
-shapiro.test(GH_data$RawWeight_day7)
-shapiro.test(GH_data$DryFatMass)
+shapiro.test(GH_data$RawWeight_day7) #weights normal
+shapiro.test(GH_data$DryFatMass) #fat non-normal
 
 # boxplots of raw weight on day 7 by plant species in the greenhouse
 myplot<-ggplot(data=GH_data, aes(x=Plant, y=RawWeight_day7),na.action=na.exclude)
 myplot+geom_boxplot(notch=FALSE)
+
+#########plots for sex differences
+myplot<-ggplot(data=GH_data, aes(x=Sex, y=DryFatMass),na.action=na.exclude)
+myplot+geom_boxplot(notch=FALSE)
+
+
+myplot<-ggplot(data=GH_data, aes(x=Sex, y=WaterMass),na.action=na.exclude)
+myplot+geom_boxplot(notch=FALSE)
+
+myplot<-ggplot(data=GH_data, aes(x=Sex, y=DryLeanMass),na.action=na.exclude)
+myplot+geom_boxplot(notch=FALSE)
+
 
 
 #################### 1.2 MODEL BUILDING - LMER ###########################
@@ -111,67 +123,25 @@ summary(fwl_day0w_lm)
 # Estimate the change in raw weight on day 7 of trial based on predictor variables
 weight_lm = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
 
-rawweight_model=weight_lm
 
 #Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
 # GVIF^(1/(2*df)) < 2 acceptable for categorical)
 vif(weight_lm) #all good
-Anova(weight_lm, type=3)
-summary(weight_lm)
+opar <- par(mfrow = c(2, 2))
+
 plot(weight_lm)
 plot(weight_lm, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,xlab="Fitted values",ylab="Standardised residuals")
+Anova(weight_lm, type=3)
+summary(weight_lm)
 
 effects_info = allEffects(weight_lm)
 effects_info
 plot(effects_info)
-#plot(weight_lm, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,col=GH_data$Couple,xlab="Fitted values",ylab="Standardised residuals")
-
-## Reduce model to remove insignificant terms, starting with cohort
-# reduced_1 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + EnclCol + (1|Couple), data=GH_data)
-# 
-# #test to see if more complex model is significantly better at describing the variation
-# anova(reduced_1, weight_lm) #not significantly better, leave cohort out
-# Anova(reduced_1, type=3)
-# 
-# # Remove next least significant term (EmergDate)
-# reduced_2 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + EnclCol + (1|Couple), data=GH_data)
-# 
-# #test to see if more complex is significantly better
-# anova(reduced_2, reduced_1) #not significantly better, keep the simpler model
-# Anova(reduced_2, type=3)
-# 
-# # remove next least significant (EnclCol)
-# reduced_3 = lmer(RawWeight_day7~ Plant + Sex + ForewingLength + (1|Couple), data=GH_data)
-# #test to see if reduced is significantly better
-# anova(reduced_3, reduced_2)
-
-#more complex is significantly better, keep reduced_2
-# bestmodel = reduced_2
-bestmodel = weight_lm
-Anova(bestmodel, type=3)
-summary(bestmodel)
-plot(allEffects(bestmodel))
-#library(MuMIn)
-#dd <- dredge(weight_lm)
- 
-# # get models within 4 units of AICc from the best model
-# top.models.1 <- get.models(dd, subset = delta < 4)
-# avgmodel1<-model.avg(top.models.1) # compute average parameters
-# summary(avgmodel1) #display averaged model
-# confint(avgmodel1) #display CI for averaged coefficients
-# model.avg(object = top.models.1)
-
 
 
 ############ 1.3 Multiple comparisons test
-# m1<-bestmodel
-# Anova(bestmodel)
-# library(multcomp)
-# #WHICH groups are different from each other
-# g<-glht(m1, mcp(Plant="Tukey")); confint(g)
-#OR
-emmeans(m1, list(pairwise~Plant), adjust="tukey")
 
+emmeans(weight_lm, list(pairwise~Plant), adjust="tukey")
 
 ######## 2. COMPARISON OF GH TO FIELD DATA (USING GOLDENROD) ##############
 #Create a database of field and gh goldenrod to compare experiments
@@ -297,6 +267,8 @@ field_fat = lm(RawWeight_day7~ Plant + ForewingLength + NumButterflies + TotalSA
 
 ############### 5. FAT EXTRACTION ANALYSES ##########################
 
+
+
 ############### 5.1 Exploration ##################################
 opar <- par(mfrow = c(1, 1))
 boxplot(WaterMass~Plant,data=data,ylab="Body water content (g)")
@@ -336,33 +308,33 @@ scatterplot(DryMass~EmergDate,data=data)
 ########################## 5.2 GREENHOUSE FAT MODELS ####################################
 gh_fat_lm = lm(DryFatMass~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
 gh_fat_lm_log = lm(log(DryFatMass)~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
-gh_relfat_lm = lm(RelDryFat~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+
 
 #Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
 # GVIF^(1/(2*df)) < 2 acceptable for categorical)
 vif(gh_fat_lm)
 
-
-plot(gh_fat_lm)
-plot(gh_fat_lm_log)
-
-plot(gh_relfat_lm)
-
 opar <- par(mfrow = c(2, 2))
 plot(gh_fat_lm)
 plot(gh_fat_lm_log)
-Anova(gh_fat_lm)
-Anova(gh_fat_lm_log)
 
-summary(gh_fat_lm_log)
+check_model(gh_fat_lm)
+check_model(gh_fat_lm_log)
+
+# Anova(gh_fat_lm)
+# Anova(gh_fat_lm_log)
+# 
+# summary(gh_fat_lm_log)
+# 
+# pred_gh_fat_lm=allEffects(gh_fat_lm)
+# pred_gh_fat_log=allEffects(gh_fat_lm_log)
 
 
-plot(allEffects(gh_fat_lm))
-plot(allEffects(gh_fat_lm_log))
-Anova(gh_fat_lm_log)
+# plot(pred_gh_fat_lm)
+# plot(pred_gh_fat_log)
+# Anova(gh_fat_lm_log)
 
 predict_plant = predictorEffect("Plant",gh_fat_lm_log)
-predict_plant = exp(predict_plant)
 
 str(predict_plant)
 predict_plant$fit = exp(predict_plant$fit)
@@ -371,34 +343,28 @@ predict_plant$lower=exp(predict_plant$lower)
 plot(predict_plant,ylab ="Fat mass (g)")
 plot(allEffects(gh_fat_lm_log))
 
-
-
-library(emmeans)
-
 emmeans(gh_fat_lm_log, list(pairwise~Plant), adjust="tukey")
 
 
-
-plot(allEffects(rawweight_model))
-
-# diagnostic plots
-plot(rawweight_model)
-qqnorm(resid(rawweight_model))
-qqline(resid(rawweight_model))
-
-
-################### gamma 
-gh_fat_lm_gm = glm(DryFatMass~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data,family="Gamma")
+################### GLM Using Gamma distribution for Fat #######################
+gh_fat_lm_gm = glm(DryFatMass ~ Sex + Plant + ForewingLength + EmergDate + TotalSA, data=GH_data,family="Gamma")
 opar <- par(mfrow = c(2, 2))
 plot(gh_fat_lm_gm)
 
 Anova(gh_fat_lm_gm)
 summary(gh_fat_lm_gm)
 pred_gh_fat_gm=allEffects(gh_fat_lm_gm)
+plot(pred_gh_fat_gm)
 
-pred_gh_fat_gm$fit = exp(pred_gh_fat_gm$fit)
-pred_gh_fat_gm$upper=exp(pred_gh_fat_gm$upper)
-pred_gh_fat_gm$lower=exp(pred_gh_fat_gm$lower)
+str(pred_gh_fat_gm$Plant)
+str(pred_gh_fat_gm$Plant$response)
+str(pred_gh_fat_gm$fit)
+str(pred_gh_fat_gm)
+
+summary(gh_fat_lm_gm)
+str(pred_gh_fat_gm)
+plot(pred_gh_fat_gm)
+check_model(gh_fat_lm_gm)
 
 plot(pred_gh_fat_gm)
 emmeans(gh_fat_lm_gm, list(pairwise~Plant), adjust="tukey")
@@ -416,6 +382,10 @@ ggplot(GH_data, aes(EmergDate, DryFatMass)) +
         axis.title.x = element_text(vjust = -8),
         axis.title.y = element_text(vjust = 10),
         plot.title = element_text(vjust = 8))
+
+
+
+
 
 
 ########## relative fat content (%)
@@ -441,3 +411,90 @@ field_fat_glm = glm(DryFatMass~ EmergDate, data=Field_data,family="Gamma")
 Anova(field_fat_glm)
 
 plot(allEffects(field_fat_glm))
+
+
+
+#################### 6. LEAN MASS (PROTEIN) ANALYSIS ###############
+
+lean_distr <- ggplot(GH_data, aes(x = DryLeanMass))
+lean_distr <- lean_distr +
+  # add data density smooth
+  geom_density() +
+  # add rug (bars at the bottom of the plot)
+  geom_rug() +
+  # add black semitransparent histogram
+  geom_histogram(aes(y = ..density..),
+                 color = "black",
+                 alpha = 0.3) +
+  # add normal curve in red, with mean and sd from fklength
+  stat_function(fun = dnorm,
+                args = list(
+                  mean = mean(GH_data$DryLeanMass),
+                  sd = sd(GH_data$DryLeanMass)
+                ),
+                color = "red")
+
+#display graph
+lean_distr
+#generate the QQ plot
+qqnorm(GH_data$DryLeanMass)
+qqline(GH_data$DryLeanMass)
+
+# 
+# ggplot(data, aes(x = RawWeight_day7, y = DryLeanMass, color = ExpLoc)) +  # ggplot function
+#   geom_point()+
+#   geom_smooth(method=lm , color="red", se=TRUE)
+
+gh_prot_lm = lm(DryLeanMass ~ Sex + Plant + ForewingLength + EmergDate, data=GH_data)
+opar <- par(mfrow = c(2, 2))
+plot(gh_prot_lm)
+
+check_model(gh_prot_lm)
+Anova(gh_prot_lm)
+
+pred_prot_lm = allEffects(gh_prot_lm)
+plot(pred_prot_lm)
+emmeans(gh_prot_lm, list(pairwise~Plant), adjust="tukey")
+
+
+
+
+##################### WATER ############################
+
+water_distr <- ggplot(GH_data, aes(x = WaterMass))
+water_distr <- water_distr +
+  # add data density smooth
+  geom_density() +
+  # add rug (bars at the bottom of the plot)
+  geom_rug() +
+  # add black semitransparent histogram
+  geom_histogram(aes(y = ..density..),
+                 color = "black",
+                 alpha = 0.3) +
+  # add normal curve in red, with mean and sd from fklength
+  stat_function(fun = dnorm,
+                args = list(
+                  mean = mean(GH_data$WaterMass),
+                  sd = sd(GH_data$WaterMass)
+                ),
+                color = "red")
+
+#display graph
+water_distr
+qqnorm(GH_data$DryLeanMass)
+qqline(GH_data$DryLeanMass)
+
+gh_water_lm = lm(WaterMass ~ Sex + Plant + ForewingLength + EmergDate, data=GH_data)
+
+opar <- par(mfrow = c(2, 2))
+
+plot(gh_water_lm)
+check_model(gh_water_lm)
+water_effects = allEffects(gh_water_lm)
+
+plot(water_effects)
+Anova(gh_water_lm)
+
+emmeans(gh_water_lm, list(pairwise~Plant), adjust="tukey")
+
+
