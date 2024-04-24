@@ -17,6 +17,7 @@ FatData = read.csv("data/FatExtractions.csv")
 library(dplyr)
 
 ############ RAW WEIGHTS ##############################
+
 # Start with a dataframe that only contains the columns of ID, Trial Day, and Weight
 experimentdat<-subset(TreatmentData, select=c("ID", "TrialDay", "Weight"))
 
@@ -107,21 +108,21 @@ experimentdat$RawWeightGain_day7 <- experimentdat$RawWeight_day7-experimentdat$R
 experimentdat$RawWeightGain_day10 <- experimentdat$RawWeight_day10-experimentdat$RawWeight_day0
 
 ############ RELATIVE WEIGHT GAIN #############
-# #add a column for relative weight gain on day 0 (i.e., 0!), which is a proportional change
-# experimentdat$RelWeightGain_day0 <- 0
-# 
-# # repeat for day 1
-# experimentdat$RelWeightGain_day1<-experimentdat$RawWeightGain_day1/experimentdat$RawWeight_day0
-# 
-# 
-# #repeat for day 5
-# experimentdat$RelWeightGain_day5<-experimentdat$RawWeightGain_day5/experimentdat$RawWeight_day0
-# 
-# #repeat for day 7
-# experimentdat$RelWeightGain_day7<-experimentdat$RawWeightGain_day7/experimentdat$RawWeight_day0
-# 
-# #repeat for day 10
-# experimentdat$RelWeightGain_day10<-experimentdat$RawWeightGain_day10/experimentdat$RawWeight_day0
+#add a column for relative weight gain on day 0 (i.e., 0!), which is a proportional change
+experimentdat$RelWeightGain_day0 <- 0
+
+# repeat for day 1
+experimentdat$RelWeightGain_day1<-experimentdat$RawWeightGain_day1/experimentdat$RawWeight_day0
+
+
+#repeat for day 5
+experimentdat$RelWeightGain_day5<-experimentdat$RawWeightGain_day5/experimentdat$RawWeight_day0
+
+#repeat for day 7
+experimentdat$RelWeightGain_day7<-experimentdat$RawWeightGain_day7/experimentdat$RawWeight_day0
+
+#repeat for day 10
+experimentdat$RelWeightGain_day10<-experimentdat$RawWeightGain_day10/experimentdat$RawWeight_day0
 
 
 ############ ADD FLORAL AREA DATA ################
@@ -179,32 +180,33 @@ summarydat = experimentdat
 ############ SAVE THE PROCESSED FILE
 setwd("processed/")
 write.csv(summarydat, file= "summarydat.csv")
+write.csv(TreatmentData,file="TreatmentData_p.csv")
 setwd(project_directory)
 
 
 
 ##########Exploration of trial day #############
-# 
-# trialday_data = subset(TreatmentData, TreatmentData$TrialDay != "10")
-# trialday_data = subset(trialday_data, trialday_data$TrialDay != "3")
-# trialday_data = subset(trialday_data, trialday_data$TrialDay != "2")
-# trialday_data = subset(trialday_data, trialday_data$TrialDay != "8")
-# trialday_data = subset(trialday_data, trialday_data$TrialDay != "11")
-# 
-# 
-# 
-# boxplot(Weight~TrialDay,data=trialday_data)
-# day_factor = trialday_data
-# day_factor$TrialDay = as.factor(day_factor$TrialDay)
-# trialday_lmer = lmer(Weight~TrialDay + ExpLoc+TrialDay:ExpLoc+ (1|ID),data=day_factor)
-# Anova(trialday_lmer)
-# plot(allEffects(trialday_lmer),ylim=c(0.3,0.65))
-# summary(trialday_lmer)
-# 
-# day_lmer = lmer(Weight~TrialDay+ExpLoc + TrialDay:ExpLoc+(1|ID),data=trialday_data)
-# plot(allEffects(day_lmer))
-# summary(day_lmer)
-# 
-# library(emmeans)
-# emmeans(trialday_lmer, list(pairwise~TrialDay), adjust="tukey")
+
+trialday_data = subset(TreatmentData, TreatmentData$TrialDay != "10")
+trialday_data = subset(trialday_data, trialday_data$TrialDay != "3")
+trialday_data = subset(trialday_data, trialday_data$TrialDay != "2")
+trialday_data = subset(trialday_data, trialday_data$TrialDay != "8")
+trialday_data = subset(trialday_data, trialday_data$TrialDay != "11")
+
+
+
+boxplot(Weight~TrialDay,data=trialday_data)
+day_factor = trialday_data
+day_factor$TrialDay = as.factor(day_factor$TrialDay)
+trialday_lmer = lmer(Weight~TrialDay + ExpLoc+TrialDay:ExpLoc+ (1|ID),data=day_factor)
+Anova(trialday_lmer)
+plot(allEffects(trialday_lmer),ylim=c(0.3,0.65))
+summary(trialday_lmer)
+
+day_lmer = lmer(Weight~TrialDay+ExpLoc + TrialDay:ExpLoc+(1|ID),data=trialday_data)
+plot(allEffects(day_lmer))
+summary(day_lmer)
+
+library(emmeans)
+emmeans(trialday_lmer, list(pairwise~TrialDay), adjust="tukey")
 
