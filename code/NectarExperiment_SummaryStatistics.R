@@ -9,7 +9,9 @@ rm(list=ls())
 
 #Load data and libraries
 summarydat<-read.csv("processed/summarydat.csv")
+TreatmentData<-read.csv("processed/TreatmentData_p.csv")#raw treatment data with all trial days
 data = summarydat
+
 library(lmerTest)
 library(car)
 library(effects)
@@ -22,8 +24,7 @@ library(ggeffects)
 library(ggbeeswarm)
 library(performance) #for check_model() assumptions function
 
-#raw treatment data with all trial days
-TreatmentData<-read.csv("processed/TreatmentData_p.csv")
+
 
 # create separate working databases for greenhouse plants, goldenrod (for GH-Field comparison), and field plants
 GH_data = subset(summarydat, summarydat$ExpLoc == "GH") # data from greenhouse
@@ -41,7 +42,6 @@ trialday_data = subset(trialday_data, trialday_data$TrialDay != "11")
 
 scatterplot(Weight~TrialDay,data=TreatmentData,ylab="Weight (g)",xlab="Trial day")
 scatterplot(Weight~EmergDate,data=TreatmentData,ylab="Weight (g)",xlab="Julian date")
-
 scatterplot(DryFatMass~EmergDate +(1|Plant),data=GH_data,ylab="% body fat",xlab="Body mass - dry (g)",smooth=FALSE)
 
 
@@ -138,18 +138,39 @@ myplot+geom_boxplot(notch=FALSE)
 myplot<-ggplot(data=GH_data, aes(x=Sex, y=DryLeanMass),na.action=na.exclude)
 myplot+geom_boxplot(notch=FALSE)
 
+myplot<-ggplot(data=GH_data, aes(x=Sex, y=ForewingLength),na.action=na.exclude)
+myplot+geom_boxplot(notch=FALSE)
 
 
 #################### 1.2 MODEL BUILDING - LMER Weight ###########################
+gh_TreatmentData = subset(TreatmentData, TreatmentData$ExpLoc == "GH")
 
-model = lmer(Weight~Plant+ExpLoc+OrigWeight+Sex+TrialDay+DateWeighed+(1|ID),data=TreatmentData)
-Anova(model)
-effects_weight = allEffects(model)
+overall_weight = lmer(Weight~Plant+OrigWeight+Sex+TrialDay+EnclCol+(1|ID),data=gh_TreatmentData)
+#removed dateweighed (collinearity with trialday) and cohort (i don't think it is relevant)
+weight_effects=allEffects(overall_weight)
+
+
+check_model(overall_weight)
+Anova(overall_weight)
+plot(weight_effects)
+plot(weight_effects$Plant)
+
+
+# gh_TreatmentData$EmergDate_c = gh_TreatmentData$EmergDate-mean(gh_TreatmentData$EmergDate)
+# gh_TreatmentData$TrialDay_f = as.factor(gh_TreatmentData$TrialDay)
+
+# overall_weight_sc = lmer(Weight~Plant + EmergDate+Sex+TrialDay+EnclCol+Cohort+(1|ID),data=gh_TreatmentData)
+# weight_effects = allEffects(overall_weight_sc)
+# 
+# Anova(overall_weight_sc, type="3")
+plot(weight_effects)
+
+effects_weight = allEffects(overall_weight)
 plot(effects_weight)
+ summary(overall_weight)
+check_model(overall_weight)
 
-check_model(model)
-
-emmeans(model, list(pairwise~Plant), adjust="tukey")
+emmeans(overall_weight, list(pairwise~Plant), adjust="tukey")
 # Check correlation of starting weight and forewing length (to see if I need both in the model)
 # The a-priori expectation is that they will be highly correlated, in which case I think forewing length is
 # the ideal variable to retain as it does not change with adult age or time of day (feeding could change weight slightly).
@@ -157,33 +178,33 @@ emmeans(model, list(pairwise~Plant), adjust="tukey")
 # since emergence (metabolism as they have not eaten, and drying time for the fluid they expel
 # as they eclose from their chrysalises)
 
-fwl_day0w_lm = lm(RawWeight_day0 ~ ForewingLength, data=GH_data)
-Anova(fwl_day0w_lm, type=3)# Significantly related, so I will keep forewing length and not use weight
-plot(allEffects(fwl_day0w_lm))
-summary(fwl_day0w_lm) 
+# fwl_day0w_lm = lm(RawWeight_day0 ~ ForewingLength, data=GH_data)
+# Anova(fwl_day0w_lm, type=3)# Significantly related, so I will keep forewing length and not use weight
+# plot(allEffects(fwl_day0w_lm))
+# summary(fwl_day0w_lm) 
 
-# Estimate the change in raw weight on day 7 of trial based on predictor variables
-weight_lm = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
-
-
-#Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
-# GVIF^(1/(2*df)) < 2 acceptable for categorical)
-vif(weight_lm) #all good
-opar <- par(mfrow = c(2, 2))
-
-plot(weight_lm)
-plot(weight_lm, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,xlab="Fitted values",ylab="Standardised residuals")
-Anova(weight_lm, type=3)
-summary(weight_lm)
-
-effects_info = allEffects(weight_lm)
-effects_info
-plot(effects_info)
-Anova(weight_lm,type=3)
+# # Estimate the change in raw weight on day 7 of trial based on predictor variables
+# weight_lm = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+# 
+# 
+# #Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
+# # GVIF^(1/(2*df)) < 2 acceptable for categorical)
+# vif(weight_lm) #all good
+# opar <- par(mfrow = c(2, 2))
+# 
+# plot(weight_lm)
+# plot(weight_lm, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,xlab="Fitted values",ylab="Standardised residuals")
+# Anova(weight_lm, type=3)
+# summary(weight_lm)
+# 
+# effects_info = allEffects(weight_lm)
+# effects_info
+# plot(effects_info)
+# Anova(weight_lm,type=3)
 
 ############ 1.3 Multiple comparisons test for Weights
-
-emmeans(weight_lm, list(pairwise~Plant), adjust="tukey")
+# 
+# emmeans(weight_lm, list(pairwise~Plant), adjust="tukey")
 
 ######## 2. COMPARISON OF GH TO FIELD DATA (USING GOLDENROD) ##############
 #Create a database of field and gh goldenrod to compare experiments
@@ -208,11 +229,6 @@ summary(gh_f_lm)
 ## Histogram of surface area by plant species
 myplot<-ggplot(data=GH_data, aes(x=Plant, y=log(TotalSA)),na.action=na.exclude)
 myplot+geom_boxplot(notch=TRUE)
-stripchart(TotalSA ~ Plant, data=GH_data,              # Data
-                      method = "jitter", # Random noise
-                      pch = 19,          # Pch symbols
-                      col = 4,           # Color of the symbol
-                      add = TRUE) 
 
 #### Compare surface area of the greenhouse plants
 ## scatter plot by plant species
@@ -221,13 +237,6 @@ ggplot(data = GH_data) +
   geom_beeswarm() +
   coord_flip()
 boxplot(TotalSA~Plant,data=GH_data)
-#Model 
-SA_comparison_GH = lm(TotalSA ~ Plant, data=GH_data)
-summary(SA_comparison_GH)
-
-#model effects
-plot(allEffects(SA_comparison_GH), ylab="Floral Surface Area")
-Anova(SA_comparison_GH)
 
 
 ########### 3.2 SA - FIELD SPECIES
@@ -243,10 +252,10 @@ ggplot(data = Field_data) +
 
 myplot<-ggplot(data=Field_data, aes(x=Plant, y=TotalSA),na.action=na.exclude)
 myplot+geom_boxplot(notch=TRUE)
-
-SA_field_lm = lm(TotalSA~Plant,data=Field_data)
-Anova(SA_field_lm)
-plot(allEffects(SA_field_lm))
+# 
+# SA_field_lm = lm(TotalSA~Plant,data=Field_data)
+# Anova(SA_field_lm)
+# plot(allEffects(SA_field_lm))
 
 
 ###################### 4 FIELD PLANTS & COMPARISONS #####################
@@ -281,7 +290,7 @@ Anova(field_lm, type=3)
 summary(field_lm)
 plot(allEffects(field_lm))
 
-field_fat = lm(RawWeight_day7~ Plant + ForewingLength + NumButterflies + TotalSA, data=females_data)
+field_fat = lm(DryFatMass ~ Plant + ForewingLength + NumButterflies + TotalSA, data=females_data)
 
 Anova(field_fat)
 summary(field_fat)
@@ -290,8 +299,8 @@ summary(field_fat)
 
 ############### 5.1 Exploration ##################################
 opar <- par(mfrow = c(1, 1))
-boxplot(WaterMass~Plant,data=data,ylab="Body water content (g)")
-water_lm = lm(WaterMass~Plant,data=data)
+boxplot(WaterMass~Plant,data=GH_data,ylab="Body water content (g)")
+water_lm = lm(WaterMass~Plant,data=GH_data)
 summary(water_lm)
 
 ggplot(data, aes(x = Plant, y = WaterMass, color = ExpLoc)) +  # ggplot function
@@ -362,46 +371,47 @@ predict_plant$lower=exp(predict_plant$lower)
 plot(predict_plant,ylab ="Fat mass (g)")
 plot(allEffects(gh_fat_lm_log))
 
+Anova(gh_fat_lm_log)
 emmeans(gh_fat_lm_log, list(pairwise~Plant), adjust="tukey")
 
 
 ################### GLM Using Gamma distribution for Fat #######################
-gh_fat_lm_gm = glm(DryFatMass ~ Sex + Plant + ForewingLength + EmergDate + TotalSA, data=GH_data,family="Gamma")
-opar <- par(mfrow = c(2, 2))
-plot(gh_fat_lm_gm)
+# gh_fat_lm_gm = glm(DryFatMass ~ Sex + Plant + ForewingLength + EmergDate + TotalSA, data=GH_data,family="Gamma")
+# opar <- par(mfrow = c(2, 2))
+# plot(gh_fat_lm_gm)
+# 
+# Anova(gh_fat_lm_gm)
+# summary(gh_fat_lm_gm)
+# pred_gh_fat_gm=allEffects(gh_fat_lm_gm)
+# plot(pred_gh_fat_gm)
+# 
+# str(pred_gh_fat_gm$Plant)
+# str(pred_gh_fat_gm$Plant$response)
+# str(pred_gh_fat_gm$fit)
+# str(pred_gh_fat_gm)
+# 
+# summary(gh_fat_lm_gm)
+# str(pred_gh_fat_gm)
+# plot(pred_gh_fat_gm)
+# check_model(gh_fat_lm_gm)
+# 
+# plot(pred_gh_fat_gm)
+# plot(pred_gh_fat_log)
+# emmeans(gh_fat_lm_gm, list(pairwise~Plant), adjust="tukey")
 
-Anova(gh_fat_lm_gm)
-summary(gh_fat_lm_gm)
-pred_gh_fat_gm=allEffects(gh_fat_lm_gm)
-plot(pred_gh_fat_gm)
-
-str(pred_gh_fat_gm$Plant)
-str(pred_gh_fat_gm$Plant$response)
-str(pred_gh_fat_gm$fit)
-str(pred_gh_fat_gm)
-
-summary(gh_fat_lm_gm)
-str(pred_gh_fat_gm)
-plot(pred_gh_fat_gm)
-check_model(gh_fat_lm_gm)
-
-plot(pred_gh_fat_gm)
-plot(pred_gh_fat_log)
-emmeans(gh_fat_lm_gm, list(pairwise~Plant), adjust="tukey")
-
-## Plot of effects using ggplot glm
-ggplot(GH_data, aes(EmergDate, DryFatMass)) + 
-  geom_smooth(method = "glm", formula = DryFatMass~ Plant + Sex + ForewingLength + EmergDate + TotalSA, colour = "black",
-              linetype = 2, fill = "gray80", alpha = 0.2,
-              method.args = list(family = gamma)) +
-  geom_rug(sides = "b") +
-  theme_bw() +
-  labs(y = "Fat weight (g)", x = "Plant") +
-  theme(text = element_text(size = 16),
-        plot.margin = margin(50, 50, 50, 50),
-        axis.title.x = element_text(vjust = -8),
-        axis.title.y = element_text(vjust = 10),
-        plot.title = element_text(vjust = 8))
+# ## Plot of effects using ggplot glm
+# ggplot(GH_data, aes(EmergDate, DryFatMass)) + 
+#   geom_smooth(method = "glm", formula = DryFatMass~ Plant + Sex + ForewingLength + EmergDate + TotalSA, colour = "black",
+#               linetype = 2, fill = "gray80", alpha = 0.2,
+#               method.args = list(family = gamma)) +
+#   geom_rug(sides = "b") +
+#   theme_bw() +
+#   labs(y = "Fat weight (g)", x = "Plant") +
+#   theme(text = element_text(size = 16),
+#         plot.margin = margin(50, 50, 50, 50),
+#         axis.title.x = element_text(vjust = -8),
+#         axis.title.y = element_text(vjust = 10),
+#         plot.title = element_text(vjust = 8))
 
 ########## relative fat content (%)
 gh_relfat_lm = lm(RelDryFat~ Plant + EmergDate + TotalSA, data=GH_data)

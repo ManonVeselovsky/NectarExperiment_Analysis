@@ -18,6 +18,49 @@ temp_data = read.csv("data/TemperatureData.csv")
 library(dplyr)
 library(tidyr) #to separate date from time in tempdat
 
+
+############ ADD FLORAL AREA DATA ################
+
+floraldat = FloralMeasurements
+
+floraldat$Radius = floraldat$Diameter/2
+
+# Calculate floral resource surface area for a single floral unit with height (as bottomless cylinders)
+cylFlowers = floraldat[which(floraldat$AreaType=="CircHeight"),]
+
+#Calculate floral area for a single floral unit with height (bottomless cylinder) (2*pi*r*h + pi*r^2)
+cylFlowers$SurfaceArea = 2*pi*cylFlowers$Radius*cylFlowers$Height + pi*cylFlowers$Radius^2
+
+
+# Calculate floral resource surface area a single floral unit without height (simple circles)
+circFlowers = floraldat[which(floraldat$AreaType=="Circular"),]
+
+# Circular flower surface area (pi r^2)
+circFlowers$SurfaceArea = 2*pi*circFlowers$Radius^2
+
+# Combine cylindrical and simple circle surface area flowers into single temp database
+foo5 = rbind(cylFlowers, circFlowers)
+#Reduce the number of columns to only those needed (plant sp., location, flower area type, surface area)
+foo6 = subset(foo5, select=c("Species", "ExpLoc","AreaType", "SurfaceArea"))
+
+# get the mean values of surface area by species in new temp database:
+foo6 = foo6 %>% group_by(Species,ExpLoc,AreaType) %>% summarise_each(funs(mean))
+
+# Rename plant species column from "Species" to "Plant" to match up with my treatment data
+colnames(foo6)[colnames(foo6) == "Species"] ="Plant"
+
+
+# Merge average surface area into temp database of master sheet
+foo7 <- merge(experimentdat,foo6[,c("SurfaceArea","ExpLoc","Plant")],by=c("Plant","ExpLoc"))
+
+#Calculate the total SA by multiplying the number of flowering heads by the average SA of a flowering head for that species
+foo7$TotalSA = foo7$FlowerHeads*foo7$SurfaceArea
+
+# Merge the TotaSA column into the processed database
+experimentdat <- merge(experimentdat,foo7[,c("TotalSA","ID")],by=c("ID"))
+
+
+
 ############ RAW WEIGHTS ##############################
 
 # Start with a dataframe that only contains the columns of ID, Trial Day, and Weight
@@ -127,45 +170,7 @@ experimentdat$RelWeightGain_day7<-experimentdat$RawWeightGain_day7/experimentdat
 experimentdat$RelWeightGain_day10<-experimentdat$RawWeightGain_day10/experimentdat$RawWeight_day0
 
 
-############ ADD FLORAL AREA DATA ################
 
-floraldat = FloralMeasurements
-
-floraldat$Radius = floraldat$Diameter/2
-
-# Calculate floral resource surface area for a single floral unit with height (as bottomless cylinders)
-cylFlowers = floraldat[which(floraldat$AreaType=="CircHeight"),]
-
-#Calculate floral area for a single floral unit with height (bottomless cylinder) (2*pi*r*h + pi*r^2)
-cylFlowers$SurfaceArea = 2*pi*cylFlowers$Radius*cylFlowers$Height + pi*cylFlowers$Radius^2
-
-
-# Calculate floral resource surface area a single floral unit without height (simple circles)
-circFlowers = floraldat[which(floraldat$AreaType=="Circular"),]
-
-# Circular flower surface area (pi r^2)
-circFlowers$SurfaceArea = 2*pi*circFlowers$Radius^2
-
-# Combine cylindrical and simple circle surface area flowers into single temp database
-foo5 = rbind(cylFlowers, circFlowers)
-#Reduce the number of columns to only those needed (plant sp., location, flower area type, surface area)
-foo6 = subset(foo5, select=c("Species", "ExpLoc","AreaType", "SurfaceArea"))
-
-# get the mean values of surface area by species in new temp database:
-foo6 = foo6 %>% group_by(Species,ExpLoc,AreaType) %>% summarise_each(funs(mean))
-
-# Rename plant species column from "Species" to "Plant" to match up with my treatment data
-colnames(foo6)[colnames(foo6) == "Species"] ="Plant"
-
-
-# Merge average surface area into temp database of master sheet
-foo7 <- merge(experimentdat,foo6[,c("SurfaceArea","ExpLoc","Plant")],by=c("Plant","ExpLoc"))
-
-#Calculate the total SA by multiplying the number of flowering heads by the average SA of a flowering head for that species
-foo7$TotalSA = foo7$FlowerHeads*foo7$SurfaceArea
-
-# Merge the TotaSA column into the processed database
-experimentdat <- merge(experimentdat,foo7[,c("TotalSA","ID")],by=c("ID"))
 
 
 ################### FAT DATA #################

@@ -11,6 +11,7 @@ setwd("C:/Users/Manon/Documents/MSc Biology/Master's Project/Statistics/NectarEx
 project_directory = getwd()
 # Load data
 TreatmentData<-read.csv("data/TreatmentData.csv")
+treatmentdat = TreatmentData
 ForewingMeasurements = read.csv("data/ForewingMeasurements.csv")
 FloralMeasurements = read.csv("data/FloralMeasurements.csv")
 FatData = read.csv("data/FatExtractions.csv")
@@ -65,7 +66,7 @@ foo2<-foo2[which(foo2$TrialDay=="0"),]
 experimentdat<-merge(experimentdat, foo2[,c("ID", "Couple", "Cohort", "Plant","ExpLoc","FlowerHeads", "NumButterflies","EnclCol", "Sex", "EmergDate")], by.x=c("ID"), all=TRUE)
 
 
-
+experimentdat_83 = experimentdat
 ############ FOREWING MEASUREMENTS ###################
 
 forewingdat = subset(ForewingMeasurements, select=c("ID", "ForewingLength", "ForewingDamage"))
@@ -91,10 +92,7 @@ experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
 # remove individuals that do not have the number of flowering heads recorded
 experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
 
-#Add a column for the day a butterfly was frozen (to account for individuals frozen on day 10)
-experimentdat$FreezeDay="7"
-experimentdat$FreezeDay[experimentdat$RawWeight_day10!="NA"]<-"10"
-
+expdat_78 = experimentdat
 ############ RAW WEIGHT GAIN
 
 #Raw weight gain day 1 calculation (Day 1 weight minus day 0 weight)
@@ -165,15 +163,70 @@ foo7 <- merge(experimentdat,foo6[,c("SurfaceArea","ExpLoc","Plant")],by=c("Plant
 foo7$TotalSA = foo7$FlowerHeads*foo7$SurfaceArea
 
 # Merge the TotaSA column into the processed database
-experimentdat <- merge(experimentdat,foo7[,c("TotalSA","ID")],by=c("ID"))
+experimentdat <- merge(experimentdat,foo7[,c("TotalSA","ID")],by=c("ID"),all.x = TRUE)
 
 
 ################### FAT DATA #################
-experimentdat <- merge(experimentdat,FatData[,c("Dry.Mass","Dry.Lean.Mass", "RelDryFat", "DryFatMass","Water.Mass","ID")],by.x=c("ID"))
-experimentdat <- experimentdat %>% 
+fatdat = FatData
+fatdat <- fatdat %>% 
   rename("DryMass" = "Dry.Mass","DryLeanMass"="Dry.Lean.Mass","WaterMass"="Water.Mass")
+experimentdat <- merge(experimentdat,fatdat[,c("DryMass","DryLeanMass", "RelDryFat", "DryFatMass","WaterMass","ID")],by.x=c("ID"),all.x=TRUE)
 
 
+###### Re-order the data so that plants are in order of most visited to least visited
+# #Subset out the individual plants - order to be solalt, buddav, symeri, ********CHECK eutmac, echpur, rudhir, helhel (most to least visited)
+# soldat = subset(experimentdat, Plant == "SolAlt")
+# buddat = subset(experimentdat, Plant =="BudDav")
+# symdat = subset(experimentdat, Plant =="SymEri")
+# eutdat = subset(experimentdat, Plant =="EutMac")
+# echdat = subset(experimentdat, Plant =="EchPur")
+# ruddat = subset(experimentdat, Plant =="RudHir")
+# heldat = subset(experimentdat, Plant =="HelHel")
+# 
+# foo9 = rbind(soldat, buddat,symdat,eutdat, echdat,ruddat,heldat)
+# experimentdat_o = foo9
+# 
+# soldat = subset(treatmentdat, Plant == "SolAlt")
+# buddat = subset(treatmentdat, Plant =="BudDav")
+# symdat = subset(treatmentdat, Plant =="SymEri")
+# eutdat = subset(treatmentdat, Plant =="EutMac")
+# echdat = subset(treatmentdat, Plant =="EchPur")
+# ruddat = subset(treatmentdat, Plant =="RudHir")
+# heldat = subset(treatmentdat, Plant =="HelHel")
+# 
+# foo10 = rbind(soldat, buddat,symdat,eutdat, echdat,ruddat,heldat)
+# treatmentdat_o = foo10
+# 
+# 
+
+#Rename plants - add column alphabetical order prefix in the order of most visited to least visited
+newdat = treatmentdat %>%
+  mutate(AlphPlant = case_when(
+    Plant %in% c("SolAlt") ~ "1_SolAlt",
+    Plant %in% c("BudDav") ~ "2_BudDav",
+    Plant %in% c("SymEri") ~ "3_SymEri",
+    Plant %in% c("EchPur") ~ "4_EchPur",
+    Plant %in% c("RudHir") ~ "5_RudHir",
+    Plant %in% c("HelHel") ~ "6_HelHel",
+    Plant %in% c("EutMac") ~ "7_EutMac",
+    TRUE ~ Plant
+  ))
+
+treatmentdat=newdat
+
+newdat2 = experimentdat %>%
+  mutate(AlphPlant = case_when(
+    Plant %in% c("SolAlt") ~ "1_SolAlt",
+    Plant %in% c("BudDav") ~ "2_BudDav",
+    Plant %in% c("SymEri") ~ "3_SymEri",
+    Plant %in% c("EchPur") ~ "4_EchPur",
+    Plant %in% c("RudHir") ~ "5_RudHir",
+    Plant %in% c("HelHel") ~ "6_HelHel",
+    Plant %in% c("EutMac") ~ "7_EutMac",
+    TRUE ~ Plant
+  ))
+
+experimentdat=newdat2
 
 ######### Temperature data - remove unnecessary columns, rename columns #############
 summary(temp_data)
@@ -193,39 +246,14 @@ tempdat = foo8
 
 
 summarydat = experimentdat
-
+TreatmentData_p = treatmentdat
 
 ############ SAVE THE PROCESSED FILE
 setwd("processed/")
 write.csv(summarydat, file= "summarydat.csv")
-write.csv(TreatmentData,file="TreatmentData_p.csv")
+write.csv(TreatmentData_p,file="TreatmentData_p.csv")
 write.csv(tempdat, file="tempdat.csv")
 setwd(project_directory)
 
 
-
-##########Exploration of trial day #############
-
-trialday_data = subset(TreatmentData, TreatmentData$TrialDay != "10")
-trialday_data = subset(trialday_data, trialday_data$TrialDay != "3")
-trialday_data = subset(trialday_data, trialday_data$TrialDay != "2")
-trialday_data = subset(trialday_data, trialday_data$TrialDay != "8")
-trialday_data = subset(trialday_data, trialday_data$TrialDay != "11")
-
-
-
-boxplot(Weight~TrialDay,data=trialday_data)
-day_factor = trialday_data
-day_factor$TrialDay = as.factor(day_factor$TrialDay)
-trialday_lmer = lmer(Weight~TrialDay + ExpLoc+TrialDay:ExpLoc+ (1|ID),data=day_factor)
-Anova(trialday_lmer)
-plot(allEffects(trialday_lmer),ylim=c(0.3,0.65))
-summary(trialday_lmer)
-
-day_lmer = lmer(Weight~TrialDay+ExpLoc + TrialDay:ExpLoc+(1|ID),data=trialday_data)
-plot(allEffects(day_lmer))
-summary(day_lmer)
-
-library(emmeans)
-emmeans(trialday_lmer, list(pairwise~TrialDay), adjust="tukey")
 
