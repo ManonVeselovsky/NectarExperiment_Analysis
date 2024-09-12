@@ -31,7 +31,8 @@ GH_data = subset(summarydat, summarydat$ExpLoc == "GH") # data from greenhouse
 GH_F_data = summarydat[which(summarydat$Plant=="SolAlt"),] #all data on goldenrod, for GH-Field comparison
 Field_data = subset(summarydat,summarydat$ExpLoc == "Field") #data from field
 SolAlt_F_data = subset(Field_data,Field_data$Plant == "SolAlt") #Subset SolAlt in field to check for enclosure effects
-
+gh_TreatmentData = subset(TreatmentData, TreatmentData$ExpLoc == "GH")
+gh_field_weight = TreatmentData[which(TreatmentData$Plant=="SolAlt"),]
 ######## 0. Exploration of trial days, Descriptive plots
 
 trialday_data = subset(TreatmentData, TreatmentData$TrialDay != "10")
@@ -143,64 +144,26 @@ myplot+geom_boxplot(notch=FALSE)
 
 
 #################### 1.2 MODEL BUILDING - LMER Weight ###########################
-gh_TreatmentData = subset(TreatmentData, TreatmentData$ExpLoc == "GH")
+######### WEIGHT EFFECTS
+overall_weight = lmer(Weight~AlphPlant+TotalSA+ForewingLength+OrigWeight+Sex+TrialDay+EnclCol+(1|ID),data=gh_TreatmentData)
 
-overall_weight = lmer(Weight~Plant+OrigWeight+Sex+TrialDay+EnclCol+(1|ID),data=gh_TreatmentData)
-#removed dateweighed (collinearity with trialday) and cohort (i don't think it is relevant)
-weight_effects=allEffects(overall_weight)
+check_model(overall_weight) #Assumptions look good, weird error bars with TrialDay VIF
+vif(overall_weight) #I don't see a problem with TrialDay here so I will leave it
 
-
-check_model(overall_weight)
 Anova(overall_weight)
-plot(weight_effects)
-plot(weight_effects$Plant)
-
-
-# gh_TreatmentData$EmergDate_c = gh_TreatmentData$EmergDate-mean(gh_TreatmentData$EmergDate)
-# gh_TreatmentData$TrialDay_f = as.factor(gh_TreatmentData$TrialDay)
-
-# overall_weight_sc = lmer(Weight~Plant + EmergDate+Sex+TrialDay+EnclCol+Cohort+(1|ID),data=gh_TreatmentData)
-# weight_effects = allEffects(overall_weight_sc)
-# 
-# Anova(overall_weight_sc, type="3")
-plot(weight_effects)
-
+summary(overall_weight)
 effects_weight = allEffects(overall_weight)
-plot(effects_weight)
- summary(overall_weight)
-check_model(overall_weight)
+plot(ggpredict(overall_weight))
+
+plot(effects_weight$AlphPlant,ylab="Weight (g)")
+effects_weight_gg = ggpredict(overall_weight, ci.lvl = 0.95)
+weight_plot = plot(effects_weight_gg$AlphPlant) +
+  labs(y = "Fat mass (g)",x = "Plant",title="") +
+  my_plot_theme
+
+weight_plot
 
 emmeans(overall_weight, list(pairwise~Plant), adjust="tukey")
-# Check correlation of starting weight and forewing length (to see if I need both in the model)
-# The a-priori expectation is that they will be highly correlated, in which case I think forewing length is
-# the ideal variable to retain as it does not change with adult age or time of day (feeding could change weight slightly).
-# Weights could fluctuate depending on the time they were taken
-# since emergence (metabolism as they have not eaten, and drying time for the fluid they expel
-# as they eclose from their chrysalises)
-
-# fwl_day0w_lm = lm(RawWeight_day0 ~ ForewingLength, data=GH_data)
-# Anova(fwl_day0w_lm, type=3)# Significantly related, so I will keep forewing length and not use weight
-# plot(allEffects(fwl_day0w_lm))
-# summary(fwl_day0w_lm) 
-
-# # Estimate the change in raw weight on day 7 of trial based on predictor variables
-# weight_lm = lm(RawWeight_day7~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
-# 
-# 
-# #Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
-# # GVIF^(1/(2*df)) < 2 acceptable for categorical)
-# vif(weight_lm) #all good
-# opar <- par(mfrow = c(2, 2))
-# 
-# plot(weight_lm)
-# plot(weight_lm, resid(., scaled=TRUE) ~ fitted(.), abline = 0,pch=16,xlab="Fitted values",ylab="Standardised residuals")
-# Anova(weight_lm, type=3)
-# summary(weight_lm)
-# 
-# effects_info = allEffects(weight_lm)
-# effects_info
-# plot(effects_info)
-# Anova(weight_lm,type=3)
 
 ############ 1.3 Multiple comparisons test for Weights
 # 

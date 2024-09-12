@@ -16,6 +16,8 @@ library(ggeffects)
 library(emmeans)
 library(tidyverse) #re-order categorical variables in effects plots
 library(dplyr)
+library(performance)
+library(multcomp) #for adding multcomp tukey to summary
 
 #raw treatment data with all trial days
 TreatmentData<-read.csv("processed/TreatmentData_p.csv")
@@ -30,121 +32,252 @@ SolAlt_F_data = subset(Field_data,Field_data$Plant == "SolAlt") #Subset SolAlt i
 gh_TreatmentData = subset(TreatmentData, TreatmentData$ExpLoc == "GH")
 gh_field_weight = TreatmentData[which(TreatmentData$Plant=="SolAlt"),]
 
+desired_order <- c("SymEri", "BudDav", "EchPur", "RudHir", "SolAlt", "HelHel")
+
+# Reorder the Plant factor in the original data
+GH_data$Plant <- factor(GH_data$Plant, levels = desired_order)
+gh_TreatmentData$Plant = factor(gh_TreatmentData$Plant, levels = desired_order)
+
+
 ## Create a theme to use on all ggpredict plots
 my_plot_theme = theme_bw() +
   theme(panel.border = element_blank(),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         axis.line = element_line(colour = "black"),
-        axis.text=element_text(size = 14),
-        axis.title=element_text(size=18),
+        axis.text=element_text(size = 12),
+        axis.title=element_text(size=14),
         line=element_line(linewidth=0.75)
         )
 
 ################ FINAL MODELS FOR EACH VARIABLE ######################
 
-######### WEIGHT EFFECTS 
-#remove cohort
-overall_weight = lmer(Weight~AlphPlant+ForewingLength+DateWeighed+Sex+TrialDay+EnclCol+(1|ID),data=gh_TreatmentData)
-table_weight = lmer(Weight~Plant+OrigWeight+DateWeighed+Sex+TrialDay+EnclCol+(1|ID),data=gh_TreatmentData)
+######### WEIGHT EFFECTS
+overall_weight = lmer(Weight~Plant+TotalSA+ForewingLength+OrigWeight+Sex+TrialDay+EnclCol+(1|ID),data=gh_TreatmentData)
 
-check_model(overall_weight)
+check_model(overall_weight) #Assumptions look good, weird error bars with TrialDay VIF
+vif(overall_weight) #I don't see a problem with TrialDay here so I will leave it
 
-#remove dateweighed - collinearity
-overall_weight = lmer(Weight~AlphPlant+OrigWeight+Sex+TrialDay+EnclCol+(1|ID),data=gh_TreatmentData)
-table_weight = lmer(Weight~Plant+OrigWeight+Sex+TrialDay+EnclCol+(1|ID),data=gh_TreatmentData)
-check_model(overall_weight)
+Anova(overall_weight) #Plant, FWL, Start weight, sex, and trial day all significant
 
 
+# Tukey-adjusted pairwise comparisons for Plant groups
+tukey_weight <- emmeans(overall_weight, pairwise ~ Plant, adjust = "tukey")
 
-summary(overall_weight)
-Anova(table_weight)
-effects_weight = allEffects(overall_weight)
-plot(ggpredict(overall_weight))
-Anova(table_weight)
+# Extracting the compact letter display (CLD) to get group letters
+cld_weight <- cld(tukey_weight$emmeans, Letters = letters)
 
-plot(effects_weight$AlphPlant,ylab="Weight (g)")
-effects_weight_gg = ggpredict(overall_weight, ci.lvl = 0.95)
-weight_plot = plot(effects_weight_gg$AlphPlant) +
-  labs(y = "Fat mass (g)",x = "Plant",title="") +
-  my_plot_theme
+# Extract predictions specifically for the Plant variable
+effects_weight_plant <- ggpredict(overall_weight, terms = "Plant", ci.lvl = 0.95)
 
+
+# Ensure Plant is treated as a factor in the effects_weight_plant data
+effects_weight_plant$x <- as.factor(effects_weight_plant$x)
+
+# Create a data frame for the plot labels, using the upper confidence interval for positioning
+labels_df <- data.frame(
+  Plant = effects_weight_plant$x,  # Ensure matching factor levels with the predictions
+  Label = cld_weight$.group,       # Tukey-adjusted significant difference letters
+  y = effects_weight_plant$conf.high + 0.01  # Position just above the upper confidence interval
+)
+
+# Change the order for plant levels to the order from most visited to least visited
+effects_weight_plant$x <- factor(effects_weight_plant$x)
+
+# Also make sure the Plant column in labels_df is ordered correctly
+labels_df$Plant <- factor(labels_df$Plant)
+
+# Create plot using the specific Plant predictions
+weight_plot <- ggplot(effects_weight_plant, show_residuals=TRUE, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(y = "Weight (g)", x = "Plant", title = "") +
+  my_plot_theme +
+  geom_text(data = labels_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + # Add significance letters
+  
+  # 1. Change x-axis labels
+  scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
+                              "BudDav" = "B. davidii", 
+                              "EchPur" = "E. purpurea", 
+                              "RudHir" = "R. hirta", 
+                              "SolAlt" = "S. altissima", 
+                              "HelHel" = "H. helianthoides")) +
+  
+  # 2. Angle the x-axis labels
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) # Italicize and angle labels
+
+# Display plot with updated x-axis labels
 weight_plot
 
-overallplot
-# overallplot + scale_x_discrete(
-#   labels = c(
-#     "1_SolAlt" = "Goldenrod",
-#     "2_BudDav" = "Butterfly bush",
-#     "3_SymEri" = "Heath Aster",
-#     "4_EchPur" = "Coneflower",
-#     "5_RudHir" = "Black-eyed Susan",
-#     "6_HelHel" = "Ox-eye")
-#   )
+tukey_p_values <- summary(tukey_weight$emmeans)$p.value
+tukey_p_values_df <- data.frame(Plant = names(tukey_p_values), Tukey_p_value = tukey_p_values)
 
-emmeans(table_weight,list(pairwise~Plant), adjust="tukey")
-tab_model(table_weight)
+# Display the model output with tab_model
+model_summary <- tab_model(overall_weight)
+
+# Print the model summary
+print(model_summary)
 
 ###########FAT PLOTS
-gh_fat_lm_log = lm(log(DryFatMass)~ AlphPlant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
-tab_fat = lm(log(DryFatMass)~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+library(ggplot2)
+library(emmeans)
+library(ggpredict)
+library(dplyr)
 
-simfat = lm(log(DryFatMass)~ AlphPlant, data=GH_data)
-Anova(simfat)
-plot(ggpredict(simfat))
-summary(simfat)
+# Fit the linear model
+overall_fat <- lm(log(DryFatMass) ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data = GH_data)
 
-# plot(allEffects(tab_fat)) + my_plot_theme
-effects_fat = ggpredict(gh_fat_lm_log, ci.lvl = 0.95)
+# Tukey-adjusted pairwise comparisons for Plant groups
+tukey_fat <- emmeans(overall_fat, pairwise ~ Plant, adjust = "tukey")
 
-fatplot = plot(effects_fat$AlphPlant) +
-  labs(y = "Fat (g)",x = "Plant",title="") +
-  my_plot_theme
+# Extracting the compact letter display (CLD) to get group letters
+cld_fat <- cld(tukey_fat$emmeans, Letters = letters)
 
-#Plots
-fatplot
-tab_model(tab_fat)
-emmeans(tab_fat,list(pairwise~Plant), adjust="tukey")
-Anova(gh_fat_lm_log)
+# Extract predictions specifically for the Plant variable
+effects_fat_plant <- ggpredict(overall_fat, terms = "Plant", ci.lvl = 0.95)
+
+# Convert ggpredict object to a data frame
+effects_fat_plant_df <- as.data.frame(effects_fat_plant)
+
+# Round predicted values and confidence intervals to 4 decimal places
+effects_fat_plant <- effects_fat_plant %>%
+  mutate(predicted = round(predicted, 4),
+         conf.low = round(conf.low, 4),
+         conf.high = round(conf.high, 4))
+
+print(effects_fat_plant_df)
+
+print(effects_fat_plant)
+# Create a data frame for the plot labels, positioning the labels slightly above the upper confidence interval
+fat_df <- data.frame(
+  Plant = factor(cld_fat$Plant),  # Ensure matching factor levels
+  Label = cld_fat$.group,       # Tukey-adjusted significant difference letters
+  y = effects_fat_plant$conf.high + 0.005  # Position just above the upper confidence interval
+)
+
+
+# Adjust the tukey label positions for specific plants
+fat_df$y[fat_df$Plant == "EchPur"] <- 0.033
+fat_df$y[fat_df$Plant == "RudHir"] <- 0.01
+fat_df$y[fat_df$Plant == "BudDav"] <- 0.0035
+fat_df$y[fat_df$Plant == "SolAlt"] <- 0.024
+
+# Also make sure the Plant column in fat_df is ordered correctly
+fat_df$Plant <- factor(fat_df$Plant)
+
+simple_plot <- ggplot(effects_fat_plant, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  geom_text(data = fat_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + # Adjust vjust if needed
+  scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
+                              "BudDav" = "B. davidii", 
+                              "EchPur" = "E. purpurea", 
+                              "RudHir" = "R. hirta", 
+                              "SolAlt" = "S. altissima", 
+                              "HelHel" = "H. helianthoides")) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 12),  # Increase font size for x-axis labels
+        axis.text.y = element_text(size = 12),                          # Increase font size for y-axis labels
+        axis.title.x = element_text(size = 12),                        # Increase font size for x-axis title
+        axis.title.y = element_text(size = 12),                        # Increase font size for y-axis title
+        panel.background = element_blank(),                             # Remove background color
+        plot.background = element_blank(),                               # Remove plot background color
+        panel.border = element_blank(),                                  # Remove panel border
+        axis.line = element_line(colour = "black")) +                   # Keep axis lines
+  labs(x = NULL, y = "Fat (g)")  # Remove x-axis title and set y-axis title
+
+print(simple_plot)
+
+tab_model(overall_fat)
+emmeans(overall_fat,list(pairwise~Plant), adjust="tukey")
+Anova(overall_fat)
+summary(overall_fat)
 
 ############LEAN MASS PLOTS
-gh_prot_lm = lm(DryLeanMass ~ AlphPlant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
-tab_lean = lm(DryLeanMass ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
-effects_prot = allEffects(gh_prot_lm)
-plot(effects_prot)
-effects_lean = ggpredict(gh_prot_lm, ci.lvl = 0.95)
+overall_lean = lm(DryLeanMass ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
 
-leanplot = plot(effects_lean$AlphPlant) +
-  labs(y = "Lean mass (g)",x = "Plant",title="") +
-  my_plot_theme
+effects_lean = ggpredict(overall_lean, ci.lvl = 0.95)
+Anova(overall_lean)
 
-leanplot
+# Tukey-adjusted pairwise comparisons for Plant groups
+tukey_lean <- emmeans(overall_lean, pairwise ~ Plant, adjust = "tukey")
 
-Anova(gh_prot_lm)
-# plot(effects_prot,ylab="Lean mass (g)")
-# plot(effects_prot$AlphPlant,ylab = "Lean mass(g)")
-tab_model(tab_lean)
-emmeans(tab_lean,list(pairwise~Plant),adjust="tukey")
+# Extracting the compact letter display (CLD) to get group letters
+cld_lean <- cld(tukey_lean$emmeans, Letters = letters)
+
+# Extract predictions specifically for the Plant variable
+effects_lean_plant <- ggpredict(overall_lean, terms = "Plant", ci.lvl = 0.95)
+
+
+# Ensure Plant is treated as a factor in the effects_lean_plant data
+effects_lean_plant$x <- as.factor(effects_lean_plant$x)
+
+# Create a data frame for the plot labels, using the upper confidence interval for positioning
+lean_df <- data.frame(
+  Plant = effects_lean_plant$x,  # Ensure matching factor levels with the predictions
+  Label = cld_lean$.group,       # Tukey-adjusted significant difference letters
+  y = effects_lean_plant$conf.high + 0.01  # Position just above the upper confidence interval
+)
+
+# Change the order for plant levels to the order from most visited to least visited
+effects_lean_plant$x <- factor(effects_lean_plant$x)
+
+# Also make sure the Plant column in lean_df is ordered correctly
+lean_df$Plant <- factor(lean_df$Plant)
+
+# Create plot using the specific Plant predictions
+lean_plot <- ggplot(effects_lean_plant, show_residuals=TRUE, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(y = "lean (g)", x = "Plant", title = "") +
+  my_plot_theme +
+  geom_text(data = lean_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + # Add significance letters
+  
+  # 1. Change x-axis labels
+  scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
+                              "BudDav" = "B. davidii", 
+                              "EchPur" = "E. purpurea", 
+                              "RudHir" = "R. hirta", 
+                              "SolAlt" = "S. altissima", 
+                              "HelHel" = "H. helianthoides")) +
+  
+  # 2. Angle the x-axis labels
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) # Italicize and angle labels
+
+# Display plot with updated x-axis labels
+lean_plot
+
 
 ################# WATER PLOTS
-gh_water_lm = lm(WaterMass ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
-effects_prot = allEffects(gh_water_lm)
-Anova(gh_water_lm)
-effects_water = allEffects(gh_water_lm)
-plot(effects_water)
+gh_water_lm = lm(WaterMass ~ AlphPlant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+Anova(gh_water_lm) #the only significant effect is forewing length, no need to plot
+check_model(gh_water_lm)
+
+effects_water = ggpredict(gh_water_lm, ci.lvl = 0.95)
+water_plant = plot(effects_water$AlphPlant, rawdata=TRUE,jitter=c(0.35,0), alpha=.40, colors = "gs") +
+  labs(y = "Water mass (g)",x = "Plant",title="") +
+  my_plot_theme
+
+water_plant
+
+tab_water = lm(WaterMass ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+tab_model(tab_water)
+Anova(tab_water)
 
 ############### GH VS FIELD
 
-ghf_weight = lmer(Weight~ ExpLoc+TrialDay+Sex+(1|ID), data=gh_field_weight)
-library(performance)
+ghf_weight = lmer(Weight~ExpLoc+TrialDay+Sex+ForewingLength+(1|ID), data=gh_field_weight)
+summary(ghf_weight)
 check_model(ghf_weight)
 tab_model(ghf_weight)
 effects_ghf = ggpredict(ghf_weight)
-plot(effects_ghf$ExpLoc) + my_plot_theme + labs(y = "Weight (g)",x = "Location",title="")
+weight_loc = plot(effects_ghf$ExpLoc, rawdata=TRUE,jitter=c(0.35,0), alpha=.40) +
+  labs(y = "Weight (g)",x = "Location",title="") +
+  my_plot_theme
+weight_loc
 Anova(ghf_weight)
+summary(ghf_weight)
 
-
-ghf_fat = lm(DryFatMass~ExpLoc + Sex, data=GH_F_data)
+ghf_fat = lm(DryFatMass~ExpLoc, data=GH_F_data)
 check_model(ghf_fat)
 Anova(ghf_fat)
 ghf_fat_pred = ggpredict(ghf_fat)

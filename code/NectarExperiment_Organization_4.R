@@ -93,7 +93,10 @@ experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
 # remove individuals that do not have the number of flowering heads recorded
 experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
 
-expdat_78 = experimentdat
+#Add a column for the day a butterfly was frozen (to account for individuals frozen on day 10)
+experimentdat$FreezeDay="7"
+experimentdat$FreezeDay[experimentdat$RawWeight_day10!="NA"]<-"10"
+
 ############ RAW WEIGHT GAIN
 
 #Raw weight gain day 1 calculation (Day 1 weight minus day 0 weight)
@@ -163,7 +166,6 @@ foo7 <- merge(experimentdat,foo6[,c("SurfaceArea","ExpLoc","Plant")],by=c("Plant
 #Calculate the total SA by multiplying the number of flowering heads by the average SA of a flowering head for that species
 foo7$TotalSA = foo7$FlowerHeads*foo7$SurfaceArea
 
-
 foo8 = merge(treatmentdat,foo6[,c("SurfaceArea","ExpLoc","Plant")],by=c("Plant","ExpLoc"))
 foo8$TotalSA = foo8$FlowerHeads*foo8$SurfaceArea
 
@@ -171,38 +173,11 @@ foo8$TotalSA = foo8$FlowerHeads*foo8$SurfaceArea
 experimentdat <- merge(experimentdat,foo7[,c("TotalSA","ID")],by=c("ID"),all.x = TRUE)
 treatmentdat = foo8
 
+
 ################### FAT DATA #################
-fatdat = FatData
-fatdat <- fatdat %>% 
+experimentdat <- merge(experimentdat,FatData[,c("Dry.Mass","Dry.Lean.Mass", "RelDryFat", "DryFatMass","Water.Mass","ID")],by.x=c("ID"))
+experimentdat <- experimentdat %>% 
   rename("DryMass" = "Dry.Mass","DryLeanMass"="Dry.Lean.Mass","WaterMass"="Water.Mass")
-experimentdat <- merge(experimentdat,fatdat[,c("DryMass","DryLeanMass", "RelDryFat", "DryFatMass","WaterMass","ID")],by.x=c("ID"),all.x=TRUE)
-
-
-###### Re-order the data so that plants are in order of most visited to least visited
-# #Subset out the individual plants - order to be solalt, buddav, symeri, ********CHECK eutmac, echpur, rudhir, helhel (most to least visited)
-# soldat = subset(experimentdat, Plant == "SolAlt")
-# buddat = subset(experimentdat, Plant =="BudDav")
-# symdat = subset(experimentdat, Plant =="SymEri")
-# eutdat = subset(experimentdat, Plant =="EutMac")
-# echdat = subset(experimentdat, Plant =="EchPur")
-# ruddat = subset(experimentdat, Plant =="RudHir")
-# heldat = subset(experimentdat, Plant =="HelHel")
-# 
-# foo9 = rbind(soldat, buddat,symdat,eutdat, echdat,ruddat,heldat)
-# experimentdat_o = foo9
-# 
-# soldat = subset(treatmentdat, Plant == "SolAlt")
-# buddat = subset(treatmentdat, Plant =="BudDav")
-# symdat = subset(treatmentdat, Plant =="SymEri")
-# eutdat = subset(treatmentdat, Plant =="EutMac")
-# echdat = subset(treatmentdat, Plant =="EchPur")
-# ruddat = subset(treatmentdat, Plant =="RudHir")
-# heldat = subset(treatmentdat, Plant =="HelHel")
-# 
-# foo10 = rbind(soldat, buddat,symdat,eutdat, echdat,ruddat,heldat)
-# treatmentdat_o = foo10
-# 
-# 
 
 #Rename plants - add column alphabetical order prefix in the order of most visited to least visited
 newdat = treatmentdat %>%
@@ -231,24 +206,21 @@ newdat2 = experimentdat %>%
     TRUE ~ Plant
   ))
 
-experimentdat=newdat2
-
 ######### Temperature data - remove unnecessary columns, rename columns #############
 summary(temp_data)
-foo9<-subset(temp_data, select=c(1:7))
+foo8<-subset(temp_data, select=c(1:7))
 
-names(foo9)[5] = "GMT"
-names(foo9)[6] = "Temperature"
-names(foo9)[7] = "Light.Lux"
+names(foo8)[5] = "GMT"
+names(foo8)[6] = "Temperature"
+names(foo8)[7] = "Light.Lux"
 
 # separate date and time into different columns
-summary(foo9$Date.Time.GMT)
+summary(foo8$Date.Time.GMT)
 library(stringr)
-foo9[c('Date', 'Time','AM.PM')] <- str_split_fixed(foo9$Date.Time.GMT, ' ')
+foo9[c('Date', 'Time','AM.PM')] <- str_split_fixed(foo8$Date.Time.GMT, ' ')
 
-tempdat = foo9
+tempdat = foo8
 ############ FINAL CLEAN-UP #####################
-
 
 summarydat = experimentdat
 TreatmentData_p = treatmentdat
@@ -256,7 +228,7 @@ TreatmentData_p = treatmentdat
 ############ SAVE THE PROCESSED FILE
 setwd("processed/")
 write.csv(summarydat, file= "summarydat.csv")
-write.csv(TreatmentData_p,file="TreatmentData_p.csv")
+write.csv(TreatmentData,file="TreatmentData_p.csv")
 write.csv(tempdat, file="tempdat.csv")
 setwd(project_directory)
 

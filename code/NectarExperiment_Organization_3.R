@@ -71,6 +71,7 @@ experimentdat_83 = experimentdat
 
 forewingdat = subset(ForewingMeasurements, select=c("ID", "ForewingLength", "ForewingDamage"))
 experimentdat<-merge(experimentdat, forewingdat[,c("ID", "ForewingLength", "ForewingDamage")], by.x=c("ID"), all=TRUE)
+treatmentdat<-merge(treatmentdat, forewingdat[,c("ID", "ForewingLength", "ForewingDamage")], by.x=c("ID"), all=TRUE)
 
 # for butterflies that were weighed while dead (see notes on raw datasheet), remove those values
 experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
@@ -162,9 +163,13 @@ foo7 <- merge(experimentdat,foo6[,c("SurfaceArea","ExpLoc","Plant")],by=c("Plant
 #Calculate the total SA by multiplying the number of flowering heads by the average SA of a flowering head for that species
 foo7$TotalSA = foo7$FlowerHeads*foo7$SurfaceArea
 
+
+foo8 = merge(treatmentdat,foo6[,c("SurfaceArea","ExpLoc","Plant")],by=c("Plant","ExpLoc"))
+foo8$TotalSA = foo8$FlowerHeads*foo8$SurfaceArea
+
 # Merge the TotaSA column into the processed database
 experimentdat <- merge(experimentdat,foo7[,c("TotalSA","ID")],by=c("ID"),all.x = TRUE)
-
+treatmentdat = foo8
 
 ################### FAT DATA #################
 fatdat = FatData
@@ -230,18 +235,18 @@ experimentdat=newdat2
 
 ######### Temperature data - remove unnecessary columns, rename columns #############
 summary(temp_data)
-foo8<-subset(temp_data, select=c(1:7))
+foo9<-subset(temp_data, select=c(1:7))
 
-names(foo8)[5] = "GMT"
-names(foo8)[6] = "Temperature"
-names(foo8)[7] = "Light.Lux"
+names(foo9)[5] = "GMT"
+names(foo9)[6] = "Temperature"
+names(foo9)[7] = "Light.Lux"
 
 # separate date and time into different columns
-summary(foo8$Date.Time.GMT)
+summary(foo9$Date.Time.GMT)
 library(stringr)
-foo9[c('Date', 'Time','AM.PM')] <- str_split_fixed(foo8$Date.Time.GMT, ' ')
+foo9[c('Date', 'Time','AM.PM')] <- str_split_fixed(foo9$Date.Time.GMT, ' ')
 
-tempdat = foo8
+tempdat = foo9
 ############ FINAL CLEAN-UP #####################
 
 
