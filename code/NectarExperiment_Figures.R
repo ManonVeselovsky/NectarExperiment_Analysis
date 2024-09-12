@@ -60,7 +60,6 @@ vif(overall_weight) #I don't see a problem with TrialDay here so I will leave it
 
 Anova(overall_weight) #Plant, FWL, Start weight, sex, and trial day all significant
 
-
 # Tukey-adjusted pairwise comparisons for Plant groups
 tukey_weight <- emmeans(overall_weight, pairwise ~ Plant, adjust = "tukey")
 
@@ -70,30 +69,37 @@ cld_weight <- cld(tukey_weight$emmeans, Letters = letters)
 # Extract predictions specifically for the Plant variable
 effects_weight_plant <- ggpredict(overall_weight, terms = "Plant", ci.lvl = 0.95)
 
-
-# Ensure Plant is treated as a factor in the effects_weight_plant data
-effects_weight_plant$x <- as.factor(effects_weight_plant$x)
-
-# Create a data frame for the plot labels, using the upper confidence interval for positioning
-labels_df <- data.frame(
-  Plant = effects_weight_plant$x,  # Ensure matching factor levels with the predictions
-  Label = cld_weight$.group,       # Tukey-adjusted significant difference letters
-  y = effects_weight_plant$conf.high + 0.01  # Position just above the upper confidence interval
-)
-
 # Change the order for plant levels to the order from most visited to least visited
 effects_weight_plant$x <- factor(effects_weight_plant$x)
 
 # Also make sure the Plant column in labels_df is ordered correctly
 labels_df$Plant <- factor(labels_df$Plant)
 
+# Ensure Plant is treated as a factor in the effects_weight_plant data
+effects_weight_plant$x <- as.factor(effects_weight_plant$x)
+# Reorder the Plant levels in cld_weight to match effects_weight_plant$x
+cld_weight$Plant <- factor(cld_weight$Plant, levels = levels(effects_weight_plant$x))
+
+# Ensure the Tukey-adjusted letters are ordered according to Plant levels
+cld_weight <- cld_weight[order(cld_weight$Plant),]
+
+# Now recreate the labels_df with the correctly ordered Plant factor
+labels_df <- data.frame(
+  Plant = effects_weight_plant$x,   # Correct factor levels from effects_weight_plant
+  Label = cld_weight$.group,        # Use reordered Tukey letters
+  y = effects_weight_plant$conf.high + 0.01  # Position just above the upper confidence interval
+)
+
 # Create plot using the specific Plant predictions
 weight_plot <- ggplot(effects_weight_plant, show_residuals=TRUE, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-  labs(y = "Weight (g)", x = "Plant", title = "") +
+  # Add raw weight data points colored by ID
+  # geom_jitter(data = gh_TreatmentData, aes(x = Plant, y = Weight, color = ID), 
+  #             width = 0.1, height = 0, size = 1.5, alpha = 0.7) +  # Raw data points with jitter
+  labs(y = "Weight (g)", x = "", title = "") +
   my_plot_theme +
-  geom_text(data = labels_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + # Add significance letters
+  geom_text(data = labels_df, aes(x = Plant, y = y, label = Label), vjust = 1) + # Add significance letters
   
   # 1. Change x-axis labels
   scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
@@ -106,7 +112,7 @@ weight_plot <- ggplot(effects_weight_plant, show_residuals=TRUE, aes(x = x, y = 
   # 2. Angle the x-axis labels
   theme(axis.text.x = element_text(angle = 30, hjust = 1)) # Italicize and angle labels
 
-# Display plot with updated x-axis labels
+# Display plot with updated x-axis labels and correct significance letters
 weight_plot
 
 tukey_p_values <- summary(tukey_weight$emmeans)$p.value
@@ -168,7 +174,8 @@ fat_df$Plant <- factor(fat_df$Plant)
 simple_plot <- ggplot(effects_fat_plant, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-  geom_text(data = fat_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + # Adjust vjust if needed
+  geom_jitter(data = GH_data, aes(x = Plant, y = DryFatMass), width = 0.1, height = 0, size = 1.25, alpha=.25, colors = "gs") +  # Raw data points
+  geom_text(data = fat_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) +
   scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
                               "BudDav" = "B. davidii", 
                               "EchPur" = "E. purpurea", 
@@ -228,10 +235,11 @@ lean_df$Plant <- factor(lean_df$Plant)
 lean_plot <- ggplot(effects_lean_plant, show_residuals=TRUE, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-  labs(y = "lean (g)", x = "Plant", title = "") +
+  geom_jitter(data = GH_data, aes(x = Plant, y = DryLeanMass), width = 0.1, height = 0, size = 1.25, alpha=.25) +  # Raw data points
+  labs(y = "Lean mass (g)", x = "", title = "") +
   my_plot_theme +
-  geom_text(data = lean_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + # Add significance letters
-  
+  # geom_text(data = lean_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + # Add significance letters
+  # 
   # 1. Change x-axis labels
   scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
                               "BudDav" = "B. davidii", 
