@@ -18,6 +18,7 @@ library(tidyverse) #re-order categorical variables in effects plots
 library(dplyr)
 library(performance)
 library(multcomp) #for adding multcomp tukey to summary
+library(patchwork) #for creating a multi-panel plot
 
 #raw treatment data with all trial days
 TreatmentData<-read.csv("processed/TreatmentData_p.csv")
@@ -256,16 +257,64 @@ lean_plot
 
 
 ################# WATER PLOTS
-gh_water_lm = lm(WaterMass ~ AlphPlant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
-Anova(gh_water_lm) #the only significant effect is forewing length, no need to plot
+# Fit the linear model for WaterMass
+gh_water_lm <- lm(WaterMass ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data = GH_data)
+
+# Check model assumptions and perform ANOVA
+Anova(gh_water_lm)
 check_model(gh_water_lm)
 
-effects_water = ggpredict(gh_water_lm, ci.lvl = 0.95)
-water_plant = plot(effects_water$AlphPlant, rawdata=TRUE,jitter=c(0.35,0), alpha=.40, colors = "gs") +
-  labs(y = "Water mass (g)",x = "Plant",title="") +
-  my_plot_theme
+# Tukey-adjusted pairwise comparisons for Plant groups (even if not significant)
+tukey_water <- emmeans(gh_water_lm, pairwise ~ Plant, adjust = "tukey")
 
-water_plant
+# Extracting the compact letter display (CLD) to get group letters
+cld_water <- cld(tukey_water$emmeans, Letters = letters)
+
+# Extract predictions specifically for the Plant variable
+effects_water_plant <- ggpredict(gh_water_lm, terms = "Plant", ci.lvl = 0.95)
+
+# Convert ggpredict object to a data frame
+effects_water_plant_df <- as.data.frame(effects_water_plant)
+
+# Round predicted values and confidence intervals
+effects_water_plant <- effects_water_plant %>%
+  mutate(predicted = round(predicted, 4),
+         conf.low = round(conf.low, 4),
+         conf.high = round(conf.high, 4))
+
+# # Create a data frame for the plot labels, positioning the labels slightly above the upper confidence interval
+# water_df <- data.frame(
+#   Plant = factor(cld_water$Plant),  # Ensure matching factor levels
+#   Label = cld_water$.group,         # Tukey-adjusted significant difference letters
+#   y = effects_water_plant$conf.high + 0.005  # Position just above the upper confidence interval
+# )
+
+# Create the water mass plot
+water_plot <- ggplot(effects_water_plant, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  geom_jitter(data = GH_data, aes(x = Plant, y = WaterMass), 
+              width = 0.1, height = 0, size = 1.5, alpha = 0.25) +  # Raw data points colored by ID
+  # geom_text(data = water_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) +
+  scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
+                              "BudDav" = "B. davidii", 
+                              "EchPur" = "E. purpurea", 
+                              "RudHir" = "R. hirta", 
+                              "SolAlt" = "S. altissima", 
+                              "HelHel" = "H. helianthoides")) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 12),  # Increase font size for x-axis labels
+        axis.text.y = element_text(size = 12),                          # Increase font size for y-axis labels
+        axis.title.x = element_text(size = 12),                        # Increase font size for x-axis title
+        axis.title.y = element_text(size = 12),                        # Increase font size for y-axis title
+        panel.background = element_blank(),                             # Remove background color
+        plot.background = element_blank(),                               # Remove plot background color
+        panel.border = element_blank(),                                  # Remove panel border
+        axis.line = element_line(colour = "black")) +                   # Keep axis lines
+  labs(x = NULL, y = "Water mass (g)") +  # Remove x-axis title and set y-axis title
+  scale_color_viridis_d()  # Color scale for ID
+
+# Print the water plot
+print(water_plot)
 
 tab_water = lm(WaterMass ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
 tab_model(tab_water)
