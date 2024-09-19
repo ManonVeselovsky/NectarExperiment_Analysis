@@ -33,6 +33,8 @@ SolAlt_F_data = subset(Field_data,Field_data$Plant == "SolAlt") #Subset SolAlt i
 gh_TreatmentData = subset(TreatmentData, TreatmentData$ExpLoc == "GH")
 gh_field_weight = TreatmentData[which(TreatmentData$Plant=="SolAlt"),]
 
+GH_data$Fat_mg = GH_data$DryFatMass*1000
+
 desired_order <- c("SymEri", "BudDav", "EchPur", "RudHir", "SolAlt", "HelHel")
 
 # Reorder the Plant factor in the original data
@@ -45,16 +47,25 @@ my_plot_theme = theme_bw() +
   theme(panel.border = element_blank(),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
-        axis.line = element_line(colour = "black"),
-        axis.text=element_text(size = 12),
-        axis.title=element_text(size=14),
-        line=element_line(linewidth=0.75)
-        )
+        axis.line = element_line(color = "black", size = 0.5),  # Standardize axis line thickness
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        line = element_line(linewidth = 0.5)  # Standardize all other line elements
+  )
 
 ################ FINAL MODELS FOR EACH VARIABLE ######################
 
 ######### WEIGHT EFFECTS
-overall_weight = lmer(Weight~Plant+TotalSA+ForewingLength+OrigWeight+Sex+TrialDay+EnclCol+(1|ID),data=gh_TreatmentData)
+#Remove TrialDay = 0 because I already have an original weight column which is the TrialDay = 0 weight
+alt_data = gh_TreatmentData %>% 
+  filter(TrialDay %in% c("1", "5","7", "10", "11"))
+overall_weight = lmer(Weight~Plant+TotalSA+ForewingLength+OrigWeight+Sex+TrialDay+DateWeighed+EnclCol+(1|ID),data=alt_data)
+
+#Create a table of the model output in a word doc
+tab_model(overall_weight, 
+          file = "tables/Weight_Model_Results.doc",   # Export to a Word document
+          show.p = TRUE)                   # Add significance stars
+
 
 check_model(overall_weight) #Assumptions look good, weird error bars with TrialDay VIF
 vif(overall_weight) #I don't see a problem with TrialDay here so I will leave it
@@ -73,8 +84,7 @@ effects_weight_plant <- ggpredict(overall_weight, terms = "Plant", ci.lvl = 0.95
 # Change the order for plant levels to the order from most visited to least visited
 effects_weight_plant$x <- factor(effects_weight_plant$x)
 
-# Also make sure the Plant column in labels_df is ordered correctly
-labels_df$Plant <- factor(labels_df$Plant)
+
 
 # Ensure Plant is treated as a factor in the effects_weight_plant data
 effects_weight_plant$x <- as.factor(effects_weight_plant$x)
@@ -95,12 +105,9 @@ labels_df <- data.frame(
 weight_plot <- ggplot(effects_weight_plant, show_residuals=TRUE, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-  # Add raw weight data points colored by ID
-  # geom_jitter(data = gh_TreatmentData, aes(x = Plant, y = Weight, color = ID), 
-  #             width = 0.1, height = 0, size = 1.5, alpha = 0.7) +  # Raw data points with jitter
-  labs(y = "Weight (g)", x = "", title = "") +
+  labs(y = "Wet weight (g)", x = "", title = "") +
   my_plot_theme +
-  geom_text(data = labels_df, aes(x = Plant, y = y, label = Label), vjust = 1) + # Add significance letters
+  geom_text(data = labels_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + # Add significance letters
   
   # 1. Change x-axis labels
   scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
@@ -111,7 +118,14 @@ weight_plot <- ggplot(effects_weight_plant, show_residuals=TRUE, aes(x = x, y = 
                               "HelHel" = "H. helianthoides")) +
   
   # 2. Angle the x-axis labels
-  theme(axis.text.x = element_text(angle = 30, hjust = 1)) # Italicize and angle labels
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 12),  # Increase font size for x-axis labels
+        axis.text.y = element_text(size = 12),                          # Increase font size for y-axis labels
+        axis.title.x = element_text(size = 12),                        # Increase font size for x-axis title
+        axis.title.y = element_text(size = 12),                        # Increase font size for y-axis title
+        panel.background = element_blank(),                             # Remove background color
+        plot.background = element_blank(),                               # Remove plot background color
+        panel.border = element_blank(),                                  # Remove panel border
+        axis.line = element_line(color = "black"))                  # Keep axis lines
 
 # Display plot with updated x-axis labels and correct significance letters
 weight_plot
@@ -120,19 +134,19 @@ tukey_p_values <- summary(tukey_weight$emmeans)$p.value
 tukey_p_values_df <- data.frame(Plant = names(tukey_p_values), Tukey_p_value = tukey_p_values)
 
 # Display the model output with tab_model
-model_summary <- tab_model(overall_weight)
+tab_model(overall_weight)
 
-# Print the model summary
-print(model_summary)
 
 ###########FAT PLOTS
-library(ggplot2)
-library(emmeans)
-library(ggpredict)
-library(dplyr)
 
 # Fit the linear model
 overall_fat <- lm(log(DryFatMass) ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data = GH_data)
+
+#Create a table of the model output in a word doc
+tab_model(overall_fat, 
+          file = "tables/Fat_Results.doc",   # Export to a Word document
+          show.p = TRUE)                   # Add significance stars
+
 
 # Tukey-adjusted pairwise comparisons for Plant groups
 tukey_fat <- emmeans(overall_fat, pairwise ~ Plant, adjust = "tukey")
@@ -154,7 +168,6 @@ effects_fat_plant <- effects_fat_plant %>%
 
 print(effects_fat_plant_df)
 
-print(effects_fat_plant)
 # Create a data frame for the plot labels, positioning the labels slightly above the upper confidence interval
 fat_df <- data.frame(
   Plant = factor(cld_fat$Plant),  # Ensure matching factor levels
@@ -172,10 +185,10 @@ fat_df$y[fat_df$Plant == "SolAlt"] <- 0.024
 # Also make sure the Plant column in fat_df is ordered correctly
 fat_df$Plant <- factor(fat_df$Plant)
 
-simple_plot <- ggplot(effects_fat_plant, aes(x = x, y = predicted)) +
+fat_plot <- ggplot(effects_fat_plant, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-  geom_jitter(data = GH_data, aes(x = Plant, y = DryFatMass), width = 0.1, height = 0, size = 1.25, alpha=.25, colors = "gs") +  # Raw data points
+  geom_jitter(data = GH_data, aes(x = Plant, y = DryFatMass), width = 0.1, height = 0, size = 1.25, alpha=.25) +  # Raw data points
   geom_text(data = fat_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) +
   scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
                               "BudDav" = "B. davidii", 
@@ -190,10 +203,10 @@ simple_plot <- ggplot(effects_fat_plant, aes(x = x, y = predicted)) +
         panel.background = element_blank(),                             # Remove background color
         plot.background = element_blank(),                               # Remove plot background color
         panel.border = element_blank(),                                  # Remove panel border
-        axis.line = element_line(colour = "black")) +                   # Keep axis lines
-  labs(x = NULL, y = "Fat (g)")  # Remove x-axis title and set y-axis title
+        axis.line = element_line(color = "black")) +                   # Keep axis lines
+  labs(x = NULL, y = "Fat mass (g)")  # Remove x-axis title and set y-axis title
 
-print(simple_plot)
+print(fat_plot)
 
 tab_model(overall_fat)
 emmeans(overall_fat,list(pairwise~Plant), adjust="tukey")
@@ -202,6 +215,12 @@ summary(overall_fat)
 
 ############LEAN MASS PLOTS
 overall_lean = lm(DryLeanMass ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data=GH_data)
+
+#Create a table of the model output in a word doc
+tab_model(overall_lean, 
+          file = "tables/Lean_Results.doc",   # Export to a Word document
+          show.p = TRUE)                   # Add significance stars
+
 
 effects_lean = ggpredict(overall_lean, ci.lvl = 0.95)
 Anova(overall_lean)
@@ -250,7 +269,14 @@ lean_plot <- ggplot(effects_lean_plant, show_residuals=TRUE, aes(x = x, y = pred
                               "HelHel" = "H. helianthoides")) +
   
   # 2. Angle the x-axis labels
-  theme(axis.text.x = element_text(angle = 30, hjust = 1)) # Italicize and angle labels
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 12),  # Increase font size for x-axis labels
+        axis.text.y = element_text(size = 12),                          # Increase font size for y-axis labels
+        axis.title.x = element_text(size = 12),                        # Increase font size for x-axis title
+        axis.title.y = element_text(size = 12),                        # Increase font size for y-axis title
+        panel.background = element_blank(),                             # Remove background color
+        plot.background = element_blank(),                               # Remove plot background color
+        panel.border = element_blank(),                                  # Remove panel border
+        axis.line = element_line(color = "black"))
 
 # Display plot with updated x-axis labels
 lean_plot
@@ -259,6 +285,7 @@ lean_plot
 ################# WATER PLOTS
 # Fit the linear model for WaterMass
 gh_water_lm <- lm(WaterMass ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, data = GH_data)
+vif(gh_water_lm)
 
 # Check model assumptions and perform ANOVA
 Anova(gh_water_lm)
@@ -309,7 +336,7 @@ water_plot <- ggplot(effects_water_plant, aes(x = x, y = predicted)) +
         panel.background = element_blank(),                             # Remove background color
         plot.background = element_blank(),                               # Remove plot background color
         panel.border = element_blank(),                                  # Remove panel border
-        axis.line = element_line(colour = "black")) +                   # Keep axis lines
+        axis.line = element_line(color = "black")) +                   # Keep axis lines
   labs(x = NULL, y = "Water mass (g)") +  # Remove x-axis title and set y-axis title
   scale_color_viridis_d()  # Color scale for ID
 
@@ -320,31 +347,37 @@ tab_water = lm(WaterMass ~ Plant + Sex + ForewingLength + EmergDate + TotalSA, d
 tab_model(tab_water)
 Anova(tab_water)
 
-############### GH VS FIELD
 
-ghf_weight = lmer(Weight~ExpLoc+TrialDay+Sex+ForewingLength+(1|ID), data=gh_field_weight)
+multi_panel_plot <- (weight_plot + fat_plot) / (lean_plot + water_plot) + 
+  plot_annotation(tag_levels = 'a')&
+  theme(plot.tag.position = c(0.05, 1))
+
+# Display the combined plot
+multi_panel_plot
+
+ggsave("plots/comboplot_weight+BodyComp.png", multi_panel_plot, width = 27, height = 25, units = "cm", dpi = 300,)
+
+############### GH VS FIELD
+ghf_weight = lmer(Weight~ExpLoc+TotalSA+OrigWeight+ForewingLength+Sex+TrialDay+(1|ID),data=gh_field_weight)
 summary(ghf_weight)
 check_model(ghf_weight)
 tab_model(ghf_weight)
 effects_ghf = ggpredict(ghf_weight)
 weight_loc = plot(effects_ghf$ExpLoc, rawdata=TRUE,jitter=c(0.35,0), alpha=.40) +
-  labs(y = "Weight (g)",x = "Location",title="") +
-  my_plot_theme
+  labs(y = "Weight (g)",x = "Location",title="") 
 weight_loc
 Anova(ghf_weight)
 summary(ghf_weight)
-
-ghf_fat = lm(DryFatMass~ExpLoc, data=GH_F_data)
-check_model(ghf_fat)
+summary(gh_field_weight)
+ghf_fat = lm(DryFatMass~ExpLoc+ForewingLength, data=GH_F_data)
 Anova(ghf_fat)
+check_model(ghf_fat)
 ghf_fat_pred = ggpredict(ghf_fat)
 ghf_plot = plot(ghf_fat_pred)
 
 ghf_plot = plot(ghf_fat_pred$ExpLoc) +
-  labs(y = "Fat (g)",x = "Location",title="") +
-  my_plot_theme
+  labs(y = "Fat (g)",x = "Location",title="") 
 
-Anova(ghf_fat)
 ghf_plot
 ################# DESCRIPTIVE SCATTERPLOTS ###########
 
@@ -390,7 +423,7 @@ p=ggplot(summarydat, aes(EmergDate, as.factor(Plant),color=ExpLoc,show.legend=TR
 p_nolegend = p + theme(legend.position="none")
 #Make theme of the plot black and white (apart from plant color) and remove unnecessary elements
 p_nolegend + theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.background = element_blank(),
-                   panel.grixd.minor = element_blank(), axis.line = element_line(colour = "black"))
+                   panel.grixd.minor = element_blank(), axis.line = element_line(color = "black"))
 
 mean(GH_data$RelWeightGain_day7)
 std.error(GH_data$RelWeightGain_day7)

@@ -203,35 +203,35 @@ experimentdat <- merge(experimentdat,fatdat[,c("DryMass","DryLeanMass", "RelDryF
 # treatmentdat_o = foo10
 # 
 # 
-
-#Rename plants - add column alphabetical order prefix in the order of most visited to least visited
-newdat = treatmentdat %>%
-  mutate(AlphPlant = case_when(
-    Plant %in% c("SolAlt") ~ "1_SolAlt",
-    Plant %in% c("BudDav") ~ "2_BudDav",
-    Plant %in% c("SymEri") ~ "3_SymEri",
-    Plant %in% c("EchPur") ~ "4_EchPur",
-    Plant %in% c("RudHir") ~ "5_RudHir",
-    Plant %in% c("HelHel") ~ "6_HelHel",
-    Plant %in% c("EutMac") ~ "7_EutMac",
-    TRUE ~ Plant
-  ))
-
-treatmentdat=newdat
-
-newdat2 = experimentdat %>%
-  mutate(AlphPlant = case_when(
-    Plant %in% c("SolAlt") ~ "1_SolAlt",
-    Plant %in% c("BudDav") ~ "2_BudDav",
-    Plant %in% c("SymEri") ~ "3_SymEri",
-    Plant %in% c("EchPur") ~ "4_EchPur",
-    Plant %in% c("RudHir") ~ "5_RudHir",
-    Plant %in% c("HelHel") ~ "6_HelHel",
-    Plant %in% c("EutMac") ~ "7_EutMac",
-    TRUE ~ Plant
-  ))
-
-experimentdat=newdat2
+# 
+# #Rename plants - add column alphabetical order prefix in the order of most visited to least visited
+# newdat = treatmentdat %>%
+#   mutate(AlphPlant = case_when(
+#     Plant %in% c("SolAlt") ~ "1_SolAlt",
+#     Plant %in% c("BudDav") ~ "2_BudDav",
+#     Plant %in% c("SymEri") ~ "3_SymEri",
+#     Plant %in% c("EchPur") ~ "4_EchPur",
+#     Plant %in% c("RudHir") ~ "5_RudHir",
+#     Plant %in% c("HelHel") ~ "6_HelHel",
+#     Plant %in% c("EutMac") ~ "7_EutMac",
+#     TRUE ~ Plant
+#   ))
+# 
+# treatmentdat=newdat
+# 
+# newdat2 = experimentdat %>%
+#   mutate(AlphPlant = case_when(
+#     Plant %in% c("SolAlt") ~ "1_SolAlt",
+#     Plant %in% c("BudDav") ~ "2_BudDav",
+#     Plant %in% c("SymEri") ~ "3_SymEri",
+#     Plant %in% c("EchPur") ~ "4_EchPur",
+#     Plant %in% c("RudHir") ~ "5_RudHir",
+#     Plant %in% c("HelHel") ~ "6_HelHel",
+#     Plant %in% c("EutMac") ~ "7_EutMac",
+#     TRUE ~ Plant
+#   ))
+# 
+# experimentdat=newdat2
 
 ######### Temperature data - remove unnecessary columns, rename columns #############
 summary(temp_data)
