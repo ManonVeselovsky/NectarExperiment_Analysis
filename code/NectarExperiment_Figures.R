@@ -166,6 +166,26 @@ labels_df <- data.frame(
 )
 
 
+
+# 1. Get the fitted values (excluding the Plant effect)
+fitted_values <- fitted(overall_weight)
+
+# 2. Calculate the raw residuals
+raw_residuals <- resid(overall_weight)
+
+# 3. Extract the effect of Plant from the model predictions
+plant_effect <- predict(overall_weight, newdata = alt_data %>% mutate(Plant = Plant), re.form = NA)
+
+# 4. Calculate partial residuals for the Plant variable
+partial_residuals <- raw_residuals + plant_effect
+
+# Create a data frame for the partial residuals
+partial_residuals_df <- data.frame(Plant = alt_data$Plant,  # Ensure this matches the plant column from your raw data
+                                   PartialResiduals = partial_residuals,
+                                   Weight = alt_data$Weight) # Keep the original weights for comparison
+
+
+
 weight_plot <- ggplot(effects_weight_plant, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
@@ -327,7 +347,7 @@ Anova(overall_lean)
 
 # Tukey-adjusted pairwise comparisons for Plant groups
 tukey_lean <- emmeans(overall_lean, pairwise ~ Plant, adjust = "tukey")
-tukey_lean
+
 # Extracting the compact letter display (CLD) to get group letters
 cld_lean <- cld(tukey_lean$emmeans, Letters = letters)
 
@@ -338,28 +358,30 @@ effects_lean_plant <- ggpredict(overall_lean, terms = "Plant", ci.lvl = 0.95)
 # Ensure Plant is treated as a factor in the effects_lean_plant data
 effects_lean_plant$x <- as.factor(effects_lean_plant$x)
 
-# Create a data frame for the plot labels, using the upper confidence interval for positioning
-lean_df <- data.frame(
-  Plant = effects_lean_plant$x,  # Ensure matching factor levels with the predictions
-  y = effects_lean_plant$conf.high + 0.01,  # Position just above the upper confidence interval
-  Label = cld_lean$.group,       # Tukey-adjusted significant difference letters
+# Define the correct plant order
+plant_levels <- c("SymEri", "BudDav", "EchPur", "RudHir", "SolAlt", "HelHel")
+
+# Reorder 'Plant' factor levels in both effects_lean_plant and cld_lean to match
+effects_lean_plant$x <- factor(effects_lean_plant$x, levels = plant_levels)
+cld_lean$Plant <- factor(cld_lean$Plant, levels = plant_levels)
+
+# Merge cld_lean with effects_lean_plant to ensure letters align with predictions
+lean_df <- merge(
+  data.frame(Plant = effects_lean_plant$x, y = effects_lean_plant$conf.high + 0.01),
+  data.frame(Plant = cld_lean$Plant, Label = cld_lean$.group),
+  by = "Plant"
 )
 
-# Change the order for plant levels to the order from most visited to least visited
-effects_lean_plant$x <- factor(effects_lean_plant$x)
-
-# Also make sure the Plant column in lean_df is ordered correctly
-lean_df$Plant <- factor(lean_df$Plant)
-
-# Create plot using the specific Plant predictions
-lean_plot <- ggplot(effects_lean_plant, show_residuals=TRUE, aes(x = x, y = predicted)) +
+# Create the plot, ensuring that the letters now match the correct plants
+lean_plot <- ggplot(effects_lean_plant, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
   geom_jitter(data = GH_data, aes(x = Plant, y = DryLeanMass), width = 0.09, height = 0, size = 1.25, alpha=.25) +  # Raw data points
   labs(y = "Lean mass (g)", x = "", title = "") +
   my_plot_theme +
-  geom_text(data = lean_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + # Add significance letters
-  # 
+  # Add the Tukey significance letters correctly aligned with the factor levels
+  geom_text(data = lean_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + 
+  
   # 1. Change x-axis labels
   scale_x_discrete(labels = c("SymEri" = "Symphyotrichum ericoides", 
                               "BudDav" = "Buddleja davidii", 
@@ -379,7 +401,7 @@ lean_plot <- ggplot(effects_lean_plant, show_residuals=TRUE, aes(x = x, y = pred
         panel.border = element_blank(),                                  # Remove panel border
         axis.line = element_line(color = "black"))
 
-# Display plot with updated x-axis labels
+# Display the plot
 lean_plot
 Anova(overall_lean)
 
