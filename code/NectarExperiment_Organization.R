@@ -18,6 +18,7 @@ FatData = read.csv("data/FatExtractions.csv")
 temp_data = read.csv("data/TemperatureData.csv")
 library(dplyr)
 library(tidyr) #to separate date from time in tempdat
+library(lubridate) #to convert date to julian date
 
 ############ RAW WEIGHTS ##############################
 
@@ -235,18 +236,32 @@ experimentdat <- merge(experimentdat,fatdat[,c("DryMass","DryLeanMass", "RelDryF
 
 ######### Temperature data - remove unnecessary columns, rename columns #############
 summary(temp_data)
-foo9<-subset(temp_data, select=c(1:7))
 
-names(foo9)[5] = "GMT"
-names(foo9)[6] = "Temperature"
-names(foo9)[7] = "Light.Lux"
+foo9 = temp_data
+names(foo9)[9] = "Temperature"
+names(foo9)[10] = "Light"
+names(foo9)[7] = "EDT"
 
-# separate date and time into different columns
-summary(foo9$Date.Time.GMT)
-library(stringr)
-foo9[c('Date', 'Time','AM.PM')] <- str_split_fixed(foo9$Date.Time.GMT, ' ')
+# Convert the two-digit Year to a four-digit format
+foo9$Year <- ifelse(foo9$Year < 100, foo9$Year + 2000, foo9$Year)
 
-tempdat = foo9
+# Step 1: Combine the Year, Month, and Day columns into a single Date column
+foo9$Date <- as.Date(with(foo9, paste(Year, Month, Day, sep = "-")), format = "%Y-%m-%d")
+
+# Step 2: Convert the Date column to Julian day
+foo9$JulianDate <- yday(foo9$Date)
+
+# Create a new column that combines EDT and AM/PM
+foo9$Time12hr <- paste(foo9$EDT, foo9$AM.PM, sep = " ")
+
+# Convert the 12-hour time format with seconds into a 24-hour time format
+foo9$Time24hr <- format(strptime(foo9$Time12hr, format = "%I:%M:%S %p"), format = "%H:%M:%S")
+
+
+foo10 = subset(foo9, select = c("Location","Date", "JulianDate","Time24hr", "Temperature", "Light"))
+
+
+tempdat = foo10
 ############ FINAL CLEAN-UP #####################
 
 
