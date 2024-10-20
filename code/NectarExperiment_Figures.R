@@ -166,7 +166,7 @@ labels_df <- data.frame(
 )
 
 
-fat_plot <- ggplot(effects_weight_plant, aes(x = x, y = predicted)) +
+weight_plot <- ggplot(effects_weight_plant, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
   geom_jitter(data = alt_data, aes(x = Plant, y = Weight), width = 0.095, height = 0, size = 1.25, alpha=.25) +  # Raw data points
