@@ -1,6 +1,6 @@
 ### Statistical analysis script
 ### Written by M. Veselovsky
-### Last modified 2024-09-23
+### Last modified 2024-12-10
 rm(list=ls())
 
 library(lmerTest)
@@ -38,6 +38,18 @@ field_TreatmentData = subset(TreatmentData, TreatmentData$ExpLoc == "Field")
 gh_field_weight = TreatmentData[which(TreatmentData$Plant=="SolAlt"),]
 
 desired_order <- c("SymEri", "SolAlt", "BudDav", "EchPur", "RudHir", "HelHel")
+
+
+# Check for duplicates
+GH_data %>%
+  filter(ID == "MVD47")  # Filter rows for ID MVD47
+
+# Remove the first occurrence of MVD47 as the second one is the correct entry
+GH_data <- GH_data %>%
+  group_by(ID) %>%
+  filter(!(ID == "MVD47" & row_number() == 1)) %>%
+  ungroup()
+
 
 # Reorder the Plant factor in the original data
 GH_data$Plant <- factor(GH_data$Plant, levels = desired_order)
@@ -82,11 +94,40 @@ forewing_males
 
 forewing_females <- mean(summarydat$ForewingLength[summarydat$Sex == "F"], na.rm = TRUE)
 forewing_females
+
+
+
+butterfly_count_interact_weight <- gh_TreatmentData %>%
+  group_by(Plant) %>%
+  summarise(TotalButterflies = n_distinct(ID))
+
+print(butterfly_count_interact_weight)
+
+# Assuming gh_TreatmentData has 'Plant' and 'DateWeighed' columns (as Julian date)
+plant_plot = ggplot(gh_TreatmentData, aes(x = DateWeighed, y = Plant, color = Plant)) +
+  geom_jitter(width = 0, height = 0.2, alpha = 0.6) +  # Adjust jitter to avoid overlap
+  labs(
+    title = "",
+    x = "Julian Date of Weight Measurement",
+    y = "Plant Species"
+  ) +
+  scale_x_continuous(
+    breaks = seq(min(gh_TreatmentData$DateWeighed), max(gh_TreatmentData$DateWeighed), by = 5),  # Set tick marks every 5 Julian days
+    labels = scales::number_format()  # Keeps Julian format
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels for readability
+    panel.grid = element_blank(),  # Remove gridlines
+    axis.line = element_line(color = "black"),  # Add axis lines
+    axis.ticks = element_line(color = "black")  # Add tick marks
+  )
+ggsave("plots/s3_PlantOverlap.jpeg", plant_plot, width = 27, height = 25, units = "cm", dpi = 300,)
+
+
 ############################################################################################################
 ############################ 1. Greenhouse Plants ########################################################
 ######### 1.1 WEIGHT EFFECTS
-
-
 mean_weight <- mean(gh_TreatmentData$Weight[gh_TreatmentData$TrialDay != 0], na.rm = TRUE)
 mean_weight
 count(gh_TreatmentData)
@@ -100,148 +141,137 @@ std_error_weight_day7 <- sd(gh_TreatmentData$Weight[gh_TreatmentData$TrialDay ==
 mean_weight
 std_error_weight_day7
 
+# Create the plot
+ggplot(gh_TreatmentData, aes(x = TrialDay, y = Weight, group = ID, color = as.factor(ID))) +
+  geom_line(alpha = 0.7, size = 1.2) + # Individual butterfly trajectories
+  geom_smooth(aes(group = 1), method = "loess", se = TRUE, color = "black", size = 1.5) + # Overall trend
+  labs(
+    title = "Individual Butterfly Weight Trajectories with Overall Trend",
+    x = "Trial Day",
+    y = "Butterfly Weight (mg)",
+    color = "Butterfly ID"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray", size = 0.5),
+    panel.grid.minor = element_blank()
+  )
 
-#Remove TrialDay = 0 because I already have an original weight (OrigWeight) column which is the TrialDay = 0 weight
-alt_data = gh_TreatmentData %>% 
-  filter(TrialDay %in% c("1", "5","7", "10", "11"))
-overall_weight = lmer(Weight~Plant+TotalSA+OrigWeight+Sex+ForewingLength+TrialDay+DateWeighed+EnclCol+(1|ID),data=alt_data)
+# overall_weight = lmer(Weight~Plant+TotalSA+ForewingLength+OrigWeight+Sex+TrialDay+DateWeighed+EnclCol+(1|ID),data=gh_TreatmentData)
+ 
+interact_weight = lmer(Weight~Plant*TrialDay+TotalSA+ForewingLength+Sex+EnclCol+(1|ID),data=gh_TreatmentData)
+
+# Extract the data used in the model
+model_data_interact_weight <- interact_weight@frame
+
+# Count the number of unique butterflies tested on each plant
+butterfly_count_by_plant <- model_data_interact_weight %>%
+  group_by(Plant) %>%
+  summarise(TotalButterflies = n_distinct(ID))
+
+print(butterfly_count_by_plant)
+
+
+check_model(interact_weight) #Trialday*Plant interaction shows multicollinearity but this is inherent with an interaction term
+# Use the model without interaction terms to check multicollinearity
+collinearity_check = lmer(Weight~Plant + TrialDay+TotalSA+ForewingLength+Sex+EnclCol+(1|ID),data=gh_TreatmentData)
+check_model(collinearity_check) #no issues with collinearity or other 
+
+# Step 1: Get emmeans for the interaction at TrialDay = 7
+interaction_emmeans <- emmeans(interact_weight, ~ Plant * TrialDay, 
+                               at = list(TrialDay = 7))  # Fix TrialDay at 7
+tukey_weight = emmeans(interact_weight, ~ Plant * TrialDay, 
+                       at = list(TrialDay = 7))  # Fix TrialDay at 7
+
+tukey_weight
+
+# Step 2: Perform pairwise comparisons for Plant (Tukey-adjusted)
+plant_comparisons <- contrast(interaction_emmeans, 
+                              method = "pairwise", 
+                              simple = "each",  # Compare within each TrialDay
+                              combine = FALSE,  # Only focus on Plant comparisons
+                              adjust = "tukey")  # Force Tukey adjustment
+
+# View pairwise results
+print(plant_comparisons)
+
+# Step 3: Generate compact letter display for Plant at TrialDay = 7
+plant_cld <- cld(interaction_emmeans, 
+                 by = "TrialDay",   # Generate letters per TrialDay
+                 adjust = "tukey",  # It is forcing a sidak adjustment
+                 #but the CLD for sidak matches the data from the tukey adjustment so I am running with this
+                 Letters = letters)
+
+# View the compact letter display
+print(plant_cld)
+
+# Step 4: Prepare the emmeans data frame for plotting
+interaction_emmeans_df <- as.data.frame(interaction_emmeans) %>%
+  filter(TrialDay == 7) %>%  # Only keep TrialDay = 7
+  mutate(.group = plant_cld$.group)  # Add significance letters
+
+# Step 5: Plot estimated means and raw data
+interaction_plot <- ggplot(interaction_emmeans_df, aes(x = Plant, y = emmean)) +
+  geom_point(size = 3, position = position_dodge(width = 0.5)) +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2, position = position_dodge(width = 0.5)) +
+  # Add raw data points for TrialDay = 7
+  geom_jitter(data = subset(gh_TreatmentData, TrialDay == 7), 
+              aes(x = Plant, y = Weight), width = 0.095, height = 0, size = 1.25, alpha=.25) +
+  # Add significance letters above error bars
+  # Add significance letters above the upper confidence intervals
+  geom_text(aes(label = .group, y = upper.CL + 0.02), 
+            position = position_dodge(width = 0.5), size = 5) +
+  labs(x = "", y = "Weight (g)", title = "") +
+  theme_minimal() +
+  my_plot_theme +
+  scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
+                              "BudDav" = "B. davidii", 
+                              "EchPur" = "E. purpurea", 
+                              "RudHir" = "R. hirta", 
+                              "SolAlt" = "S. altissima", 
+                              "HelHel" = "H. helianthoides"))
+
+print(interaction_plot)
+
+
+Anova(interact_weight, type = 3)
+summary(interact_weight)
 
 #Create a table of the model output in a word doc
-tab_model(overall_weight, 
+tab_model(interact_weight, 
           file = "tables/Weight_Model_Results.doc",   # Export to a Word document
           show.p = TRUE, # Add significance stars
           show.stat = TRUE,
           show.se = TRUE,
           show.df = TRUE)                   
 
-summary(overall_weight)
-
-check_model(overall_weight) #Assumptions look good, weird error bars with TrialDay VIF
-#Test for collinearity among predictor variables (GVIF<4 for continuous acceptable,
-# GVIF^(1/(2*df)) < 2 acceptable for categorical)
-vif(overall_weight) #no problem here
-
-Anova(overall_weight) #Plant, FWL, Start weight, Sex, and Trial day all significant
-summary(overall_weight)
-
-# Tukey-adjusted pairwise comparisons for Plant groups
-tukey_weight <- emmeans(overall_weight, pairwise ~ Plant, adjust = "tukey")
-
-tukey_contrasts <- tukey_weight$contrasts
-
-tidy_weight <- tidy(tukey_contrasts)
-tidy_weight <- tidy_weight %>%
-  mutate(across(where(is.numeric), round, 4))
-
-
-# Create a Word document and add the table as a proper Word table
-my_doc <- read_docx() %>%
-  body_add_par("Tukey-adjusted pairwise comparisons for Plant groups") %>%
-  body_add_table(value = tidy_weight) %>%  # Add the dataframe directly as a table
-  print(target = "tables/Tukey_Contrasts.docx")  # Export the document to the target path
-
-tukey_weight
-
-
-
-# Extracting the compact letter display (CLD) to get group letters
-cld_weight <- cld(tukey_weight$emmeans, Letters = letters)
-
-# Extract predictions specifically for the Plant variable
-effects_weight_plant <- ggpredict(overall_weight, terms = "Plant", ci.lvl = 0.95)
-
-# Ensure Plant is treated as a factor in the effects_weight_plant data
-effects_weight_plant$x <- as.factor(effects_weight_plant$x)
-# # Reorder the Plant levels in cld_weight to match effects_weight_plant$x
-# cld_weight$Plant <- factor(cld_weight$Plant, levels = levels(effects_weight_plant$x))
-
-# Ensure the Tukey-adjusted letters are ordered according to Plant levels
-cld_weight <- cld_weight[order(cld_weight$Plant),]
-
-# Now recreate the labels_df with the correctly ordered Plant factor
-labels_df <- data.frame(
-  Plant = effects_weight_plant$x,   # Correct factor levels from effects_weight_plant
-  Label = cld_weight$.group,        # Use reordered Tukey letters
-  y = effects_weight_plant$conf.high + 0.01  # Position just above the upper confidence interval
-)
-
-
-
-# 1. Get the fitted values (excluding the Plant effect)
-fitted_values <- fitted(overall_weight)
-
-# 2. Calculate the raw residuals
-raw_residuals <- resid(overall_weight)
-
-# 3. Extract the effect of Plant from the model predictions
-plant_effect <- predict(overall_weight, newdata = alt_data %>% mutate(Plant = Plant), re.form = NA)
-
-# 4. Calculate partial residuals for the Plant variable
-partial_residuals <- raw_residuals + plant_effect
-
-# Create a data frame for the partial residuals
-partial_residuals_df <- data.frame(Plant = alt_data$Plant,  # Ensure this matches the plant column from your raw data
-                                   PartialResiduals = partial_residuals,
-                                   Weight = alt_data$Weight) # Keep the original weights for comparison
-
-
-
-weight_plot <- ggplot(effects_weight_plant, aes(x = x, y = predicted)) +
-  geom_point(size = 3) +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-  geom_jitter(data = alt_data, aes(x = Plant, y = Weight), width = 0.095, height = 0, size = 1.25, alpha=.25) +  # Raw data points
-  geom_text(data = labels_df, aes(x = Plant, y = y, label = Label), vjust = -0.5, size = 5) +
-  scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
-                              "BudDav" = "B. davidii", 
-                              "EchPur" = "E. purpurea", 
-                              "RudHir" = "R. hirta", 
-                              "SolAlt" = "S. altissima", 
-                              "HelHel" = "H. helianthoides")) +
-  theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 13),  # Increase font size for x-axis labels
-        axis.text.y = element_text(size = 13),                          # Increase font size for y-axis labels
-        axis.title.x = element_text(size = 13),                        # Increase font size for x-axis title
-        axis.title.y = element_text(size = 13),                        # Increase font size for y-axis title
-        panel.background = element_blank(),                             # Remove background color
-        plot.background = element_blank(),                               # Remove plot background color
-        panel.border = element_blank(),                                  # Remove panel border
-        axis.line = element_line(color = "black")) +                   # Keep axis lines
-  labs(x = NULL, y = "Weight (g)")  # Remove x-axis title and set y-axis title
-
-# Display plot with updated x-axis labels, adjusted legend, and significance letters
-weight_plot
-
-summary(overall_weight)
-
-tukey_p_values <- summary(tukey_weight$emmeans)$p.value
-tukey_p_values_df <- data.frame(Plant = names(tukey_p_values), Tukey_p_value = tukey_p_values)
-
-# Display the model output with tab_model
-tab_model(overall_weight)
-
-
-length(unique(overall_weight@frame$ID[overall_weight@frame$Sex == "M"]))
-length(unique(overall_weight@frame$ID[overall_weight@frame$Sex == "F"]))
-
-length(unique(overall_weight@frame$ID[overall_weight@frame$Plant == "SymEri"]))
-length(unique(overall_weight@frame$ID[overall_weight@frame$Plant == "SolAlt"]))
-length(unique(overall_weight@frame$ID[overall_weight@frame$Plant == "EchPur"]))
-length(unique(overall_weight@frame$ID[overall_weight@frame$Plant == "BudDav"]))
-length(unique(overall_weight@frame$ID[overall_weight@frame$Plant == "RudHir"]))
-length(unique(overall_weight@frame$ID[overall_weight@frame$Plant == "HelHel"]))
-
-
+plot(ggpredict(interact_weight))
 
 #####################################################################################################
 ############################ 1.2 FAT EFFECTS ########################################################
 
 # Fit the linear model
-overall_fat <- lm(log(DryFatMass) ~ Plant + Sex + ForewingLength +RawWeight_day0+ EmergDate + TotalSA, data = GH_data)
+overall_fat <- lm(log(DryFatMass) ~ Plant + Sex + ForewingLength +RawWeight_day0 + TotalSA, data = GH_data)
+normal_fat = lm(DryFatMass ~ Plant + Sex + ForewingLength +RawWeight_day0 + TotalSA, data = GH_data)
+plot(allEffects(normal_fat))
 
+check_model(overall_fat)
+# Get the model data from the overall_fat model
+model_data_overall_fat <- model.frame(overall_fat)
 
+# Count the number of butterflies tested on each plant (by counting rows for each Plant)
+butterfly_count_by_plant_overall_fat <- model_data_overall_fat %>%
+  group_by(Plant) %>%
+  summarise(TotalButterflies = n())
+plot(allEffects(overall_fat))
+print(butterfly_count_by_plant_overall_fat)
+
+Anova(overall_fat)
 #Create a table of the model output in a word doc
 tab_model(overall_fat, 
           file = "tables/Fat_Results.doc",   # Export to a Word document
-          show.p = TRUE,                   # Add significance stars
+          show.p = TRUE,                   
           show.stat = TRUE,
           show.se = TRUE,
           show.df = TRUE
@@ -250,11 +280,11 @@ tab_model(overall_fat,
 # Tukey-adjusted pairwise comparisons for Plant groups
 tukey_fat <- emmeans(overall_fat, pairwise ~ Plant, adjust = "tukey")
 
-tukey_contrasts <- tukey_fat$contrasts
+tukey_contrasts <- tukey_fat$contrasts #Extract the contrast letters from the mult-comp
 
-tidy_fat <- tidy(tukey_contrasts)
-tidy_fat <- tidy_fat %>%
-  mutate(across(where(is.numeric), round, 3))
+# tidy_fat <- tidy(tukey_contrasts)
+# tidy_fat <- tidy_fat %>%
+#   mutate(across(where(is.numeric), round, 3))
 
 
 # Create a Word document and add the table as a proper Word table
@@ -271,6 +301,8 @@ cld_fat <- cld(tukey_fat$emmeans, Letters = letters)
 
 # Extract predictions specifically for the Plant variable
 effects_fat_plant <- ggpredict(overall_fat, terms = "Plant", ci.lvl = 0.95)
+
+plot(ggpredict(overall_fat, terms = "TotalSA",ci.lvl=0.95)+ggplot(gh))
 
 # Convert ggpredict object to a data frame
 effects_fat_plant_df <- as.data.frame(effects_fat_plant)
@@ -324,14 +356,15 @@ tab_model(overall_fat)
 emmeans(overall_fat,list(pairwise~Plant), adjust="tukey")
 Anova(overall_fat)
 summary(overall_fat)
-
+check_model(overall_fat)
+vif(overall_fat)
 sum(overall_fat$model$Sex == "M")
 sum(overall_fat$model$Sex == "F")
 
 
 #####################################################################################################
 ############################ 1.3 LEAN MASS EFFECTS ########################################################
-overall_lean = lm(DryLeanMass ~ Plant + Sex + ForewingLength + RawWeight_day0+ EmergDate + TotalSA, data=GH_data)
+overall_lean = lm(DryLeanMass ~ Plant + Sex + ForewingLength + RawWeight_day0 + TotalSA, data=GH_data)
 
 #Create a table of the model output in a word doc
 tab_model(overall_lean, 
@@ -341,6 +374,7 @@ tab_model(overall_lean,
           show.se = TRUE,
           show.df = TRUE)                   
 
+check_model(overall_lean)
 
 effects_lean = ggpredict(overall_lean, ci.lvl = 0.95)
 Anova(overall_lean)
@@ -361,9 +395,9 @@ effects_lean_plant$x <- as.factor(effects_lean_plant$x)
 # Define the correct plant order
 plant_levels <- c("SymEri", "BudDav", "EchPur", "RudHir", "SolAlt", "HelHel")
 
-# Reorder 'Plant' factor levels in both effects_lean_plant and cld_lean to match
-effects_lean_plant$x <- factor(effects_lean_plant$x, levels = plant_levels)
-cld_lean$Plant <- factor(cld_lean$Plant, levels = plant_levels)
+# Ensure Plant is treated as a factor in the effects_lean_plant data
+effects_lean_plant$x <- factor(effects_lean_plant$x, levels = c("SymEri", "SolAlt", "BudDav", "EchPur", "RudHir", "HelHel"))
+cld_lean$Plant <- factor(cld_lean$Plant, levels = c("SymEri", "SolAlt", "BudDav", "EchPur", "RudHir", "HelHel"))
 
 # Merge cld_lean with effects_lean_plant to ensure letters align with predictions
 lean_df <- merge(
@@ -372,34 +406,42 @@ lean_df <- merge(
   by = "Plant"
 )
 
-# Create the plot, ensuring that the letters now match the correct plants
+# Ensure GH_data has the correct levels for comparison
+GH_data$Plant <- factor(GH_data$Plant, levels = c("SymEri", "SolAlt", "BudDav", "EchPur", "RudHir", "HelHel"))
+
+# Create the plot with consistent theming and style
 lean_plot <- ggplot(effects_lean_plant, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-  geom_jitter(data = GH_data, aes(x = Plant, y = DryLeanMass), width = 0.09, height = 0, size = 1.25, alpha=.25) +  # Raw data points
+  geom_jitter(data = GH_data, aes(x = Plant, y = DryLeanMass), width = 0.09, height = 0, size = 1.25, alpha = .25) +  # Raw data points
   labs(y = "Lean mass (g)", x = "", title = "") +
   my_plot_theme +
   # Add the Tukey significance letters correctly aligned with the factor levels
-  geom_text(data = lean_df, aes(x = Plant, y = y, label = Label), vjust = -0.5) + 
+  geom_text(data = lean_df, aes(x = Plant, y = y, label = Label), size = 5, vjust = -0.5) +
   
-  # 1. Change x-axis labels
-  scale_x_discrete(labels = c("SymEri" = "Symphyotrichum ericoides", 
-                              "BudDav" = "Buddleja davidii", 
-                              "EchPur" = "Echinacea purpurea", 
-                              "RudHir" = "Rudbeckia hirta", 
-                              "SolAlt" = "Solidago altissima", 
-                              "HelHel" = "Heliopsis helianthoides")) +
+  # Ensure the x-axis has the desired plant name order
+  scale_x_discrete(labels = c(
+    "SymEri" = "Symphyotrichum ericoides", 
+    "SolAlt" = "Solidago altissima", 
+    "BudDav" = "Buddleja davidii", 
+    "EchPur" = "Echinacea purpurea", 
+    "RudHir" = "Rudbeckia hirta", 
+    "HelHel" = "Heliopsis helianthoides"
+  )) +
   
-  # 2. Angle the x-axis labels
+  # Adjust theme for consistent look
   theme(plot.margin = margin(t = 5, r = 5, b = 5, l = 20, unit = "mm"),
-        axis.text.x = element_text(angle = 30, hjust = 1, size = 13),  # Increase font size for x-axis labels
-        axis.text.y = element_text(size = 13),                          # Increase font size for y-axis labels
-        axis.title.x = element_text(size = 13),                        # Increase font size for x-axis title
-        axis.title.y = element_text(size = 13),                        # Increase font size for y-axis title
-        panel.background = element_blank(),                             # Remove background color
-        plot.background = element_blank(),                               # Remove plot background color
-        panel.border = element_blank(),                                  # Remove panel border
+        axis.text.x = element_text(angle = 30, hjust = 1, size = 13),  # Adjust x-axis text
+        axis.text.y = element_text(size = 13),                          # Adjust y-axis text
+        axis.title.x = element_text(size = 13),                        # Adjust x-axis title
+        axis.title.y = element_text(size = 13),                        # Adjust y-axis title
+        panel.background = element_blank(),                             # Remove panel background
+        plot.background = element_blank(),                               # Remove plot background
+        panel.border = element_blank(),                                  # Remove borders
         axis.line = element_line(color = "black"))
+
+
+
 
 # Display the plot
 lean_plot
@@ -422,7 +464,7 @@ print(effects_lean_plant)
 #####################################################################################################
 ############################ 1.4 WATER EFFECTS ########################################################
 # Fit the linear model for WaterMass
-overall_water <- lm(WaterMass ~ Plant + Sex + ForewingLength + RawWeight_day0 + EmergDate + TotalSA, data = GH_data)
+overall_water <- lm(WaterMass ~ Plant + Sex + ForewingLength + RawWeight_day0 + TotalSA, data = GH_data)
 vif(overall_water)
 
 # Check model assumptions and perform ANOVA
@@ -497,9 +539,9 @@ plot(allEffects(overall_water))
 
 
 
-
+interact_weight
 # Remove x-axis labels from the upper panels and legend from weight_plot
-weight_panel <- weight_plot + theme(
+weight_panel <- interaction_plot + theme(
   axis.title.x = element_blank(),
   axis.text.x = element_blank(),
   legend.position = "none")  # Remove the legend
@@ -521,7 +563,7 @@ gh_multi_panel_plot = gh_multi_panel_plot + theme(plot.margin = margin(t = 5, r 
 gh_multi_panel_plot 
 
 #save the multi-panel plot
-ggsave("plots/comboplot_weight+BodyComp.png", gh_multi_panel_plot, width = 27, height = 25, units = "cm", dpi = 300,)
+ggsave("plots/fig3_comboplot_weight+BodyComp.png", gh_multi_panel_plot, width = 27, height = 25, units = "cm", dpi = 300,)
 
 
 
@@ -529,18 +571,13 @@ ggsave("plots/comboplot_weight+BodyComp.png", gh_multi_panel_plot, width = 27, h
 ############################## 2. GH VS FIELD ########################################################
 ############################ 2.1 WEIGHT ########################################################
 
-ghf_weight = lmer(Weight~ExpLoc+TotalSA+OrigWeight+ForewingLength+Sex+TrialDay+(1|ID),data=gh_field_weight)
+ghf_weight = lmer(Weight~ExpLoc*TrialDay+ForewingLength+Sex+(1|ID),data=gh_field_weight)
 
 check_model(ghf_weight)
-Anova(ghf_weight)
+Anova(ghf_weight, type = 3)
 # Extract the model summary
 summary_model <- summary(ghf_weight)
-
-# Extract the p-value for ExpLoc directly from the fixed effects
-p_value_exploc <- summary_model$coefficients["ExpLocGreenhouse", "Pr(>|t|)"]
-
-# Create a label for significance based on the p-value
-significance_label <- ifelse(p_value_exploc < 0.05, "*", "ns")
+summary_model
 
 # Extract predictions for ExpLoc (without Tukey adjustment)
 effects_weight_exploc <- ggpredict(ghf_weight, terms = "ExpLoc", ci.lvl = 0.95)
@@ -554,6 +591,22 @@ labels_df_exploc <- data.frame(
   Label = significance_label,
   y = effects_weight_exploc$conf.high + 0.01  # Position just above upper confidence interval
 )
+ghf_weight_summary = summary(ghf_weight)
+
+# Extract the p-value for ExpLoc (ExpLocGreenhouse as per the correct coefficient name)
+p_weight_exploc <- ghf_weight_summary$coefficients["ExpLocGreenhouse", "Pr(>|t|)"]
+
+# Format the p-value: if it's less than 0.001, display "<0.001"; if greater than 0.05, display nothing
+if (p_weight_exploc < 0.001) {
+  p_weight_label <- "***"
+} else if (p_weight_exploc < 0.01) {
+  p_weight_label <- "**"
+} else if (p_weight_exploc < 0.05) {
+  p_weight_label = "*"
+} else {
+  p_weight_label <- ""  # No label if p > 0.05
+} 
+
 
 exploc_weight_plot <- ggplot(effects_weight_exploc, show_residuals = TRUE, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
@@ -562,6 +615,10 @@ exploc_weight_plot <- ggplot(effects_weight_exploc, show_residuals = TRUE, aes(x
               width = 0.1, height = 0, alpha = 0.25) +  # Raw data points colored by TrialDay
   labs(y = "Wet weight (g)", x = "") +  
   my_plot_theme +
+  
+  # Add the p-value label, now adjusted for position
+  annotate("text", x = 2.5, y = 0.72, 
+           label = p_weight_label, hjust = 1.5, vjust = 1.5, size = 7, color = "black", fontface = "bold") +
   
   # Adjust x-axis labels
   scale_x_discrete(labels = c("GH" = "Greenhouse", "Field" = "Field")) +
@@ -584,17 +641,32 @@ exploc_weight_plot
 
 summary(ghf_weight)
 check_model(ghf_weight)
-tab_model(ghf_weight)
+tab_model(ghf_weight, 
+          file = "tables/ghf_Weight.doc",   # Export to a Word document
+          show.p = TRUE, # Add significance stars
+          show.stat = TRUE,
+          show.se = TRUE,
+          show.df = TRUE
+) 
 
 
 #####################################################################################################
 ############################ 2.2 GH-Field Fat comparison ############################
 
 # Fit the model
-ghf_fat <- lm(DryFatMass ~ ExpLoc + RawWeight_day0+ForewingLength, data = GH_F_data)
+ghf_fat <- lm(DryFatMass ~ ExpLoc + Sex+RawWeight_day0, data = GH_F_data)
+
+check_model(ghf_fat)
+vif(ghf_fat)
 
 # Get the summary of the model
 ghf_fat_summary <- summary(ghf_fat)
+
+anova_field_fat <- Anova(field_fat)
+p_field_fat <- anova_field_fat["Plant", "Pr(>F)"]  # Adjust depending on output format
+significance_fat <- ifelse(p_field_fat < 0.001, "***",
+                           ifelse(p_field_fat < 0.01, "**",
+                                  ifelse(p_plant_fat < 0.05, "*", "")))
 
 # Extract the predicted effects as a data frame
 effects_ghf_fat_df <- as.data.frame(ggpredict(ghf_fat, terms = "ExpLoc"))
@@ -603,16 +675,18 @@ check_model(ghf_fat)
 Anova(ghf_fat)
 
 # Extract the p-value for ExpLoc (ExpLocGreenhouse as per the correct coefficient name)
-p_value_exploc <- ghf_fat_summary$coefficients["ExpLocGreenhouse", "Pr(>|t|)"]
+p_fat_exploc <- ghf_fat_summary$coefficients["ExpLocGreenhouse", "Pr(>|t|)"]
 
 # Format the p-value: if it's less than 0.001, display "<0.001"; if greater than 0.05, display nothing
-if (p_value_exploc < 0.001) {
-  p_value_label <- "p < 0.001"
-} else if (p_value_exploc > 0.05) {
-  p_value_label <- ""  # No label if p > 0.05
+if (p_fat_exploc < 0.001) {
+  p_fat_label <- "***"
+} else if (p_fat_exploc < 0.01) {
+  p_fat_label <- "**"
+} else if (p_fat_exploc < 0.05) {
+  p_fat_label = "*"
 } else {
-  p_value_label <- paste0("p = ", round(p_value_exploc, 3))
-}
+  p_fat_label <- ""  # No label if p > 0.05
+} 
 
 # Create the plot for DryFatMass by ExpLoc
 fat_loc_plot <- ggplot(effects_ghf_fat_df, aes(x = x, y = predicted)) +
@@ -626,7 +700,7 @@ fat_loc_plot <- ggplot(effects_ghf_fat_df, aes(x = x, y = predicted)) +
   
   # Add the p-value label, now adjusted for position
   annotate("text", x = 2.25, y = 0.06, 
-           label = p_value_label, hjust = 1.5, vjust = 1.5, size = 5, color = "black", fontface = "bold") +
+           label = p_fat_label, hjust = 1.5, vjust = 1.5, size = 7, color = "black", fontface = "bold") +
   
   # Adjust theme and formatting
   theme(axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
@@ -640,8 +714,147 @@ fat_loc_plot <- ggplot(effects_ghf_fat_df, aes(x = x, y = predicted)) +
 
 # Display the plot
 fat_loc_plot
+summary(ghf_fat)
+check_model(ghf_fat)
 
-gh_f_multi_panel_plot <- (exploc_weight_plot + fat_loc_plot) + 
+tab_model(ghf_fat, 
+          file = "tables/ghf_Fat.doc",   # Export to a Word document
+          show.p = TRUE, # Add significance stars
+          show.stat = TRUE,
+          show.se = TRUE,
+          show.df = TRUE
+) 
+
+############################ 2.3 GH-Field Lean mass comparison #############################
+# Fit the model
+ghf_lean <- lm(DryLeanMass ~ ExpLoc + Sex+RawWeight_day0, data = GH_F_data)
+
+# Calculate VIF for the model
+vif_values <- vif(ghf_lean)
+
+vif_values
+
+# Check if the VIF output is a matrix/data frame or a vector
+if (is.matrix(vif_values) || is.data.frame(vif_values)) {
+  # For multiple degrees of freedom, adjust each GVIF^(1/(2*Df))
+  gvif_adjusted <- vif_values[, "GVIF"]^(1 / (2 * vif_values[, "Df"]))
+} else {
+  # If VIF is a simple vector, no adjustment needed for Df (assumes Df = 1 for each)
+  gvif_adjusted <- vif_values^(1 / 2)
+}
+
+# Display the adjusted GVIF values
+gvif_adjusted
+
+# Extract the predicted effects as a data frame
+effects_ghf_lean_df <- as.data.frame(ggpredict(ghf_lean, terms = "ExpLoc"))
+
+check_model(ghf_lean)
+Anova(ghf_lean)
+
+ghf_lean_summary = summary(ghf_lean)
+
+# Extract the p-lean for ExpLoc (ExpLocGreenhouse as per the correct coefficient name)
+p_lean_exploc <- ghf_lean_summary$coefficients["ExpLocGreenhouse", "Pr(>|t|)"]
+
+if (p_lean_exploc < 0.001) {
+  p_lean_label <- "***"
+} else if (p_lean_exploc < 0.01) {
+  p_lean_label <- "**"
+} else if (p_lean_exploc < 0.05) {
+  p_lean_label = "*"
+} else {
+  p_lean_label <- ""  # No label if p > 0.05
+} 
+
+# Create the plot for DryLeanMass by ExpLoc
+lean_loc_plot <- ggplot(effects_ghf_lean_df, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(y = "Lean mass (g)", x = "", title = "") +
+  
+  # Add raw data points with jitter
+  geom_jitter(data = GH_F_data, aes(x = ExpLoc, y = DryLeanMass), 
+              width = 0.1, alpha = 0.25, size = 1.5) +
+  
+  # Add the p-lean label, now adjusted for position
+  annotate("text", x = 2.25, y = 0.15, 
+           label = p_lean_label, hjust = 1.5, vjust = 1.5, size = 7, color = "black", fontface = "bold") +
+  
+  # Adjust theme and formatting
+  theme(axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
+        axis.text.y = element_text(size = 13),               # Y-axis label size
+        axis.title.x = element_text(size = 13),              # X-axis title size
+        axis.title.y = element_text(size = 13),              # Y-axis title size
+        panel.background = element_blank(),                  # Remove background
+        plot.background = element_blank(),                   # Remove plot background
+        panel.border = element_blank(),                      # Remove panel border
+        axis.line = element_line(color = "black"))           # Keep axis lines
+
+# Display the plot
+lean_loc_plot
+
+summary(ghf_lean)
+check_model(ghf_lean)
+
+tab_model(ghf_lean, 
+          file = "tables/ghf_Lean.doc",   # Export to a Word document
+          show.p = TRUE, # Add significance stars
+          show.stat = TRUE,
+          show.se = TRUE,
+          show.df = TRUE
+) 
+
+
+
+############### 2.4 Greenhouse-Field Water Mass ################################
+
+# Fit the model
+ghf_water <- lm(WaterMass ~ ExpLoc+Sex+RawWeight_day0, data = GH_F_data)
+
+# Get the summary of the model
+ghf_water_summary <- summary(ghf_water)
+
+# Extract the predicted effects as a data frame
+effects_ghf_water_df <- as.data.frame(ggpredict(ghf_water, terms = "ExpLoc"))
+
+check_model(ghf_water)
+Anova(ghf_water)
+
+# Create the plot for WaterMass by ExpLoc
+water_loc_plot <- ggplot(effects_ghf_water_df, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(y = "Water (g)", x = "", title = "") +
+  
+  # Add raw data points with jitter
+  geom_jitter(data = GH_F_data, aes(x = ExpLoc, y = WaterMass), 
+              width = 0.1, alpha = 0.25, size = 1.5) +
+  
+  # Adjust theme and formatting
+  theme(axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
+        axis.text.y = element_text(size = 13),               # Y-axis label size
+        axis.title.x = element_text(size = 13),              # X-axis title size
+        axis.title.y = element_text(size = 13),              # Y-axis title size
+        panel.background = element_blank(),                  # Remove background
+        plot.background = element_blank(),                   # Remove plot background
+        panel.border = element_blank(),                      # Remove panel border
+        axis.line = element_line(color = "black"))           # Keep axis lines
+
+# Display the plot
+water_loc_plot
+
+summary(ghf_water)
+tab_model(ghf_water, 
+          file = "tables/ghf_Water.doc",   # Export to a Word document
+          show.p = TRUE, # Add significance stars
+          show.stat = TRUE,
+          show.se = TRUE,
+          show.df = TRUE
+) 
+
+
+gh_f_multi_panel_plot <- (exploc_weight_plot + fat_loc_plot) / (lean_loc_plot + water_loc_plot) + 
   plot_annotation(tag_levels = 'a')&
   theme(plot.tag.position = c(0.05, 1))
 
@@ -650,46 +863,129 @@ gh_f_multi_panel_plot
 
 ggsave("plots/comboplot_GH_Field.png", gh_f_multi_panel_plot, width = 27, height = 20, units = "cm", dpi = 300,)
 
-
-
 ###############################################################################################
-############################ FIELD SolAlt & EutMac COMPARISON##############################
+############################ 3. FIELD SolAlt & EutMac COMPARISON##############################
 
-field_fem_weight = subset(field_TreatmentData,field_TreatmentData$Sex == "F")
-field_fem_weight = subset(field_fem_weight,field_fem_weight$EnclCol != "FBrown")
+field_fem_weight = subset(field_TreatmentData,field_TreatmentData$Sex == "F") #remove males as there were not many
+field_fem_weight = subset(field_fem_weight,field_fem_weight$EnclCol != "FBrown") #Remove brown enclosures
 
-field_fem_fat = subset(Field_data,Field_data$Sex == "F")
-field_fem_fat = subset(field_fem_fat,field_fem_fat$EnclCol != "FBrown")
+field_fem_comp = subset(Field_data,Field_data$Sex == "F")
+field_fem_comp = subset(field_fem_comp,field_fem_comp$EnclCol != "FBrown")
+
+# Add EnclID to the fat dataset by matching the ID from weight data
+field_fem_comp$EnclID <- field_fem_weight$EnclID[match(field_fem_comp$ID, field_fem_weight$ID)]
+summary(field_fem_comp)
 
 sum(Field_data$Sex == "M")
 sum(Field_data$Sex == "F")
-sum(field_fem_fat$Plant == "E. maculatum")
-sum(field_fem_fat$Plant == "S. altissima")
+sum(field_fem_comp$Plant == "E. maculatum")
+sum(field_fem_comp$Plant == "S. altissima")
 sum(Field_data$EnclCol =="FBrown")
 
 
-sum(field_fem_fat$EnclCol =="FBrown")
-sum(field_fem_fat$EnclCol =="FBlack")
+sum(field_fem_comp$EnclCol =="FBrown")
+sum(field_fem_comp$EnclCol =="FBlack")
 
+############################ 3.1 FIELD WEIGHT ###############################
 
-############################ FIELD WEIGHT ###############################
-
-
-encl_effect_field = lmer(Weight ~ EnclCol + (1|ID), data = field_fem_weight)
-Anova(encl_effect_field)
-
-
-field_weight = lmer(Weight ~ Plant + OrigWeight + TotalSA+(1|ID), data = field_fem_weight)
+field_weight = lmer(Weight ~ Plant*TrialDay+TotalSA+(1|EnclID/ID), data = field_fem_weight)
 check_model(field_weight)
-Anova(field_weight)
+
+
+
+# Get predicted values for Plant effect (fixing random effects)
+predicted_field_weight <- ggpredict(field_weight, terms = "Plant")
+
+# Calculate residuals from the model
+field_fem_weight$residuals_field_weight <- residuals(field_weight)
+
+# Account for random effects: generate conditional residuals
+predicted_values <- predict(field_weight, re.form = ~(1 | EnclID/ID), allow.new.levels = TRUE)
+field_fem_weight$conditional_residuals <- field_fem_weight$Weight - predicted_values
+
+# Calculate the mean predicted value for each Plant level
+mean_predicted_values <- predicted_field_weight$predicted
+
+# Recalculate residuals relative to the predicted mean for each factor level of Plant
+field_fem_weight$centered_residuals <- field_fem_weight$residuals_field_weight + 
+  mean_predicted_values[match(field_fem_weight$Plant, predicted_field_weight$x)]
+
+# Create the plot for the residuals with the same level of grey as your raw data points
+field_weight_plot <- ggplot(predicted_field_weight, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(y = "Wet weight (g)", x = "", title = "") +
+  
+  # Add residual points with jitter, using the same grey level for styling as in your previous example
+  geom_jitter(data = field_fem_weight, aes(x = Plant, y = centered_residuals), 
+              width = 0.1, alpha = 0.25, size = 1.5, color = "grey30") +  # Use grey30 for residual points
+  
+  # Add significance annotation
+  annotate("text", x = length(unique(predicted_field_weight$x)) + 0.3, 
+           y = max(predicted_field_weight$predicted) + 0.1, 
+           label = significance, size = 6) +
+  
+  # Adjust theme and formatting to preserve your initial design
+  theme(
+    axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
+    axis.text.y = element_text(size = 13),               # Y-axis label size
+    axis.title.x = element_text(size = 13),              # X-axis title size
+    axis.title.y = element_text(size = 13),              # Y-axis title size
+    panel.background = element_blank(),                  # Remove background
+    plot.background = element_blank(),                   # Remove plot background
+    panel.border = element_blank(),                      # Remove panel border
+    axis.line = element_line(color = "black")            # Keep axis lines
+  )
+
+# Display the plot
+field_weight_plot
+
+
+anova_field_weight <- Anova(field_weight, type = "III")  # Specify type = "III"
+anova_field_weight
+
+# Extract fixed-effects predictions
+field_fem_weight <- field_fem_weight %>%
+  mutate(
+    # Predicted values without random effects
+    fixed_effects_pred = predict(field_weight, re.form = NA),
+    # Partial residuals for TotalSA
+    partial_residuals_totalsa = residuals(field_weight) + fixed_effects_pred
+  )
+
+# Select the variables we need for plotting (TotalSA and residuals)
+partial_residual_data <- field_fem_weight %>%
+  select(TotalSA, partial_residuals_totalsa)
+
+# Get predictions for TotalSA from ggeffects
+predicted_field_weight <- ggeffects::ggpredict(field_weight, terms = "TotalSA") %>%
+  rename(x = x, predicted = predicted, conf.low = conf.low, conf.high = conf.high)
+
+# Add partial residuals
+partial_residual_data <- field_fem_weight %>%
+  select(TotalSA, partial_residuals_totalsa)
+
+
+
+
+
+
+
+
+p_field_plant <- anova_field_weight["Plant", "Pr(>Chisq)"]  # Adjust depending on output format
+significance <- ifelse(p_field_plant < 0.001, "***",
+                       ifelse(p_field_plant < 0.01, "**",
+                              ifelse(p_field_plant < 0.05, "*", "")))
+
 summary(field_weight)
 plot(allEffects(field_weight))
 
+tab_model(field_weight)
 # Predicted effects for the model
 predicted_field_weight <- ggpredict(field_weight, terms = "Plant")
 
 # Create the plot for DryFatMass by ExpLoc
-field_weight_plot <- ggplot(predicted_field_weight, aes(x = x, y = predicted)) +
+field_weight_plot_rawdata <- ggplot(predicted_field_weight, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
   labs(y = "Wet weight (g)", x = "", title = "") +
@@ -697,6 +993,11 @@ field_weight_plot <- ggplot(predicted_field_weight, aes(x = x, y = predicted)) +
   # Add raw data points with jitter
   geom_jitter(data = field_fem_weight, aes(x = Plant, y = Weight), 
               width = 0.1, alpha = 0.25, size = 1.5) +
+  
+  # Add significance annotation
+  annotate("text", x = length(unique(predicted_field_weight$x)) + 0.3, 
+           y = max(predicted_field_weight$predicted) + 0.1, 
+           label = significance, size = 6) +
   
   # Adjust theme and formatting
   theme(
@@ -709,14 +1010,13 @@ field_weight_plot <- ggplot(predicted_field_weight, aes(x = x, y = predicted)) +
         panel.border = element_blank(),                      # Remove panel border
         axis.line = element_line(color = "black"))           # Keep axis lines
 
+
 # Print the plot
-print(field_weight_plot)
+print(field_weight_plot_rawdata)
 
-###################### FIELD FAT
-
-
+############################# 3.2 FIELD FAT ##########################
 # Fit the model
-field_fat <- lm(DryFatMass ~ Plant + TotalSA+RawWeight_day0, data = field_fem_fat)
+field_fat <- lmer(DryFatMass ~ Plant+TotalSA+RawWeight_day0+(1|EnclID), data = field_fem_comp)
 check_model(field_fat)
 
 Anova(field_fat)
@@ -724,14 +1024,17 @@ Anova(field_fat)
 # Predict effects for the model
 predicted_field_fat <- ggpredict(field_fat, terms = "Plant")
 
+tab_model(field_fat)
+plot(allEffects(field_fat))
+
 # Create the plot for DryFatMass by ExpLoc
-fat_field_plot <- ggplot(predicted_field_fat, aes(x = x, y = predicted)) +
+fat_field_plot_raw <- ggplot(predicted_field_fat, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
   labs(y = "Fat (g)", x = "", title = "") +
   
   # Add raw data points with jitter
-  geom_jitter(data = field_fem_fat, aes(x = Plant, y = DryFatMass), 
+  geom_jitter(data = field_fem_comp, aes(x = Plant, y = DryFatMass), 
               width = 0.1, alpha = 0.25, size = 1.5) +
   
   
@@ -746,10 +1049,180 @@ fat_field_plot <- ggplot(predicted_field_fat, aes(x = x, y = predicted)) +
     panel.border = element_blank(),                      # Remove panel border
     axis.line = element_line(color = "black"))           # Keep axis lines
 
-fat_field_plot
+fat_field_plot_raw
 
 
-field_multi_plot <- (field_weight_plot + fat_field_plot) + 
+
+
+# Step 1: Get residuals for the model
+field_fem_comp$residuals_fat <- residuals(field_fat)
+
+# Step 2: Get predicted values for the model
+predicted_field_fat <- ggpredict(field_fat, terms = "Plant")
+
+# Step 3: Extract the random effects for EnclID
+random_effects <- ranef(field_fat)$EnclID
+
+# Step 4: Make sure random_effects is in the correct format for matching
+random_effects <- as.data.frame(random_effects)
+
+# Step 5: Add the corresponding random effect for each EnclID into the data
+field_fem_comp$random_effect <- random_effects[match(field_fem_comp$EnclID, rownames(random_effects)), 1]
+
+# Step 6: Center the residuals by adding the mean predicted value and the random effect
+field_fem_comp$centered_residuals_fat <- field_fem_comp$residuals_fat + mean(predicted_field_fat$predicted) + field_fem_comp$random_effect
+
+# Step 7: Plot the residuals for the field fat model
+field_fat_residual_plot <- ggplot(predicted_field_fat, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +  # Predicted points
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(y = "Dry fat mass (g)", x = "", title = "") +
+  
+  # Add residual data points (from field_fem_comp) with jitter
+  geom_jitter(data = field_fem_comp, aes(x = Plant, y = centered_residuals_fat), 
+              width = 0.1, alpha = 0.25, size = 1.5, color = "grey30") +  # Residuals in grey
+  
+  # Formatting theme as per original plot
+  theme(
+    axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
+    axis.text.y = element_text(size = 13),               # Y-axis label size
+    axis.title.x = element_text(size = 13),              # X-axis title size
+    axis.title.y = element_text(size = 13),              # Y-axis title size
+    panel.background = element_blank(),                  # Remove background
+    plot.background = element_blank(),                   # Remove plot background
+    panel.border = element_blank(),                      # Remove panel border
+    axis.line = element_line(color = "black")            # Keep axis lines
+  )
+
+# Step 8: Display the residual plot for the 'fat' model
+field_fat_residual_plot
+
+
+############################# 3.3 Field lean #####################################
+
+# Fit the model
+field_lean <- lmer(DryLeanMass ~ Plant+TotalSA+ForewingLength + (1|EnclID), data = field_fem_comp)
+check_model(field_lean)
+
+Anova(field_lean)
+
+# Predict effects for the model
+predicted_field_lean <- ggpredict(field_lean, terms = "Plant")
+
+# Create the plot for DryleanMass by ExpLoc
+lean_field_plot_raw <- ggplot(predicted_field_lean, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(y = "Lean (g)", x = "", title = "") +
+  
+  # Add raw data points with jitter
+  geom_jitter(data = field_fem_comp, aes(x = Plant, y = DryLeanMass), 
+              width = 0.1, alpha = 0.25, size = 1.5) +
+  
+  
+  # Adjust theme and formatting
+  theme(
+    axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
+    axis.text.y = element_text(size = 13),               # Y-axis label size
+    axis.title.x = element_text(size = 13),              # X-axis title size
+    axis.title.y = element_text(size = 13),              # Y-axis title size
+    panel.background = element_blank(),                  # Remove background
+    plot.background = element_blank(),                   # Remove plot background
+    panel.border = element_blank(),                      # Remove panel border
+    axis.line = element_line(color = "black"))           # Keep axis lines
+
+lean_field_plot_raw
+
+
+# Step 1: Calculate the residuals from the model
+field_fem_comp$residuals_lean <- residuals(field_lean)
+
+# Step 2: Create predicted values for each data point using ggpredict
+predicted_field_lean <- ggpredict(field_lean, terms = "Plant")
+
+# Step 3: Calculate the mean of the predicted values
+mean_predicted_value <- mean(predicted_field_lean$predicted)
+
+# Step 4: Center the residuals around the mean predicted value
+field_fem_comp$centered_residuals_lean <- field_fem_comp$residuals_lean + (mean_predicted_value - mean(field_fem_comp$residuals_lean))
+
+# Step 5: Calculate significance stars based on p-value for Plant
+p_field_lean_plant <- anova(field_lean)["Plant", "Pr(>Chisq)"]  # Extract p-value for Plant effect
+significance_lean <- ifelse(p_field_lean_plant < 0.001, "***",
+                            ifelse(p_field_lean_plant < 0.01, "**",
+                                   ifelse(p_field_lean_plant < 0.05, "*", "")))
+
+# Step 6: Create the residuals plot
+field_lean_residual_plot <- ggplot(predicted_field_lean, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +  # Predicted points
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +  # Error bars
+  
+  # Add residuals (centered) to the plot, jittered for visibility
+  geom_jitter(data = field_fem_comp, aes(x = Plant, y = centered_residuals_lean), 
+              width = 0.1, alpha = 0.25, size = 1.5, color = "grey30") +  # Residuals
+  
+  # Step 7: Add significance annotation (stars)
+  annotate("text", x = length(unique(predicted_field_lean$x)) + 0.3, 
+           y = max(predicted_field_lean$predicted) + 0.1, 
+           label = significance_lean, size = 6) +  # Place significance stars
+  
+  # Step 8: Customize the plot's appearance
+  theme(
+    axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
+    axis.text.y = element_text(size = 13),               # Y-axis label size
+    axis.title.x = element_text(size = 13),              # X-axis title size
+    axis.title.y = element_text(size = 13),              # Y-axis title size
+    panel.background = element_blank(),                  # Remove background
+    plot.background = element_blank(),                   # Remove plot background
+    panel.border = element_blank(),                      # Remove panel border
+    axis.line = element_line(color = "black")            # Keep axis lines
+  ) +
+  # Step 9: Correct the axis labels as needed
+  labs(
+    y = "Lean mass (g)",  # Correcting y-axis label
+    x = NULL  # Remove x-axis label for Plant
+  )
+
+# Step 10: Print the final plot
+print(field_lean_residual_plot)
+
+
+########################## 3.4 Water mass ###################################
+
+# Fit the model
+field_water <- lmer(WaterMass ~ Plant+TotalSA+RawWeight_day0+(1|EnclID), data = field_fem_comp)
+check_model(field_water)
+
+Anova(field_water)
+
+# Predict effects for the model
+predicted_field_water <- ggpredict(field_water, terms = "Plant")
+
+# Create the plot for DrywaterMass by ExpLoc
+water_field_plot <- ggplot(predicted_field_water, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  labs(y = "Water (g)", x = "", title = "") +
+  
+  # Add raw data points with jitter
+  geom_jitter(data = field_fem_comp, aes(x = Plant, y = WaterMass), 
+              width = 0.1, alpha = 0.25, size = 1.5) +
+  
+  
+  # Adjust theme and formatting
+  theme(
+    axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
+    axis.text.y = element_text(size = 13),               # Y-axis label size
+    axis.title.x = element_text(size = 13),              # X-axis title size
+    axis.title.y = element_text(size = 13),              # Y-axis title size
+    panel.background = element_blank(),                  # Remove background
+    plot.background = element_blank(),                   # Remove plot background
+    panel.border = element_blank(),                      # Remove panel border
+    axis.line = element_line(color = "black"))           # Keep axis lines
+
+water_field_plot
+
+field_multi_plot <- (field_weight_plot + fat_field_plot) / (lean_field_plot + water_field_plot) + 
   plot_annotation(tag_levels = 'a')&
   theme(plot.tag.position = c(0.22, .95))
 
@@ -757,6 +1230,252 @@ field_multi_plot <- (field_weight_plot + fat_field_plot) +
 field_multi_plot
 
 ggsave("plots/comboplot_Field.png", field_multi_plot, width = 27, height = 20, units = "cm", dpi = 300,)
+
+
+# Step 2: Calculate the residuals from the model
+field_fem_comp$residuals_water <- residuals(field_water)
+
+# Step 3: Create predicted values for each data point using ggpredict
+predicted_field_water <- ggpredict(field_water, terms = "Plant")
+
+# Step 4: Calculate the mean of the predicted values
+mean_predicted_value_water <- mean(predicted_field_water$predicted)
+
+# Step 5: Center the residuals around the mean predicted value
+field_fem_comp$centered_residuals_water <- field_fem_comp$residuals_water + (mean_predicted_value_water - mean(field_fem_comp$residuals_water))
+
+# Step 6: Calculate significance stars based on p-value for Plant
+p_field_water_plant <- anova(field_water)["Plant", "Pr(>Chisq)"]  # Extract p-value for Plant effect
+significance_water <- ifelse(p_field_water_plant < 0.001, "***",
+                             ifelse(p_field_water_plant < 0.01, "**",
+                                    ifelse(p_field_water_plant < 0.05, "*", "")))
+
+# Step 7: Create the residuals plot
+field_water_residual_plot <- ggplot(predicted_field_water, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +  # Predicted points
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +  # Error bars
+  
+  # Add residuals (centered) to the plot, jittered for visibility
+  geom_jitter(data = field_fem_comp, aes(x = Plant, y = centered_residuals_water), 
+              width = 0.1, alpha = 0.25, size = 1.5, color = "grey30") +  # Residuals
+  
+  # Step 8: Add significance annotation (stars)
+  annotate("text", x = length(unique(predicted_field_water$x)) + 0.3, 
+           y = max(predicted_field_water$predicted) + 0.1, 
+           label = significance_water, size = 6) +  # Place significance stars
+  
+  # Step 9: Customize the plot's appearance (same theme)
+  theme(
+    axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
+    axis.text.y = element_text(size = 13),               # Y-axis label size
+    axis.title.x = element_blank(),                      # No X-axis title
+    axis.title.y = element_text(size = 13),              # Y-axis title size
+    panel.background = element_blank(),                  # Remove background
+    plot.background = element_blank(),                   # Remove plot background
+    panel.border = element_blank(),                      # Remove panel border
+    axis.line = element_line(color = "black")            # Keep axis lines
+  ) +
+  labs(y = "Water Mass (g)")  # Set the correct y-axis label
+
+# Step 10: Print the final plot
+print(field_water_residual_plot)
+
+
+########################## Make a combination plot for total surface area and each of the responses
+# 1. field weight vs total surface area
+# 1. For `field_weight`
+predicted_field_weight <- ggpredict(field_weight, terms = "TotalSA")
+summary_field_weight <- summary(field_weight)
+
+p_field_weight_totalsa <- summary_field_weight$coefficients["TotalSA", "Pr(>|t|)"]
+significance_weight <- ifelse(p_field_weight_totalsa < 0.001, "***",
+                              ifelse(p_field_weight_totalsa < 0.01, "**",
+                                     ifelse(p_field_weight_totalsa < 0.05, "*", "")))
+
+# Plot for `field_weight`
+field_weight_sa_plot <- ggplot(predicted_field_weight, aes(x = x, y = predicted)) +
+  geom_line(size = 1, aes(group = 1)) +  # Ensures a line is drawn
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) + 
+  labs(y = "Weight (g)", x = "Total Surface Area (cm²)", title = "") +
+  geom_jitter(data = field_fem_weight, aes(x = TotalSA, y = Weight), 
+              width = 0.1, alpha = 0.25, size = 1.5) +
+  geom_text(aes(x = max(predicted_field_weight$x), 
+                y = max(predicted_field_weight$predicted), 
+                label = significance_weight), 
+            color = "black", size = 6, hjust = 10, vjust = -11) +
+  theme(axis.text.x = element_text(hjust = 0.5, size = 13), 
+        axis.text.y = element_text(size = 13), 
+        axis.title.x = element_text(size = 13), 
+        axis.title.y = element_text(size = 13), 
+        panel.background = element_blank(),
+        plot.background = element_blank(), 
+        panel.border = element_blank(),
+        axis.line = element_line(color = "black"))
+
+print(field_weight_sa_plot)
+
+
+# 2. For `field_fat`
+predicted_field_fat <- ggpredict(field_fat, terms = "TotalSA")
+summary_field_fat <- summary(field_fat)
+p_field_fat_totalsa <- summary_field_fat$coefficients["TotalSA", "Pr(>|t|)"]
+significance_fat <- ifelse(p_field_fat_totalsa < 0.001, "***",
+                           ifelse(p_field_fat_totalsa < 0.01, "**",
+                                  ifelse(p_field_fat_totalsa < 0.05, "*", "")))
+
+# Plot for `field_fat`
+field_fat_sa_plot <- ggplot(predicted_field_fat, aes(x = x, y = predicted)) +
+  geom_line(size = 1, aes(group = 1)) +  
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) + 
+  labs(y = "Dry Fat Mass (g)", x = "Total Surface Area (cm²)", title = "") +
+  geom_jitter(data = field_fem_comp, aes(x = TotalSA, y = DryFatMass), 
+              width = 0.1, alpha = 0.25, size = 1.5) +
+  geom_text(aes(x = max(predicted_field_fat$x), 
+                y = max(predicted_field_fat$predicted), 
+                label = significance_fat), 
+            color = "black", size = 6, hjust = 10, vjust = -11) +
+  theme(axis.text.x = element_text(hjust = 0.5, size = 13), 
+        axis.text.y = element_text(size = 13), 
+        axis.title.x = element_text(size = 13), 
+        axis.title.y = element_text(size = 13), 
+        panel.background = element_blank(),
+        plot.background = element_blank(), 
+        panel.border = element_blank(),
+        axis.line = element_line(color = "black"))
+
+
+print(field_fat_sa_plot)
+
+# 3. For `field_lean`
+predicted_field_lean <- ggpredict(field_lean, terms = "TotalSA")
+summary_field_lean <- summary(field_lean)
+p_field_lean_totalsa <- summary_field_lean$coefficients["TotalSA", "Pr(>|t|)"]
+significance_lean <- ifelse(p_field_lean_totalsa < 0.001, "***",
+                            ifelse(p_field_lean_totalsa < 0.01, "**",
+                                   ifelse(p_field_lean_totalsa < 0.05, "*", "")))
+
+# Plot for `field_lean`
+field_lean_sa_plot <- ggplot(predicted_field_lean, aes(x = x, y = predicted)) +
+  geom_line(size = 1, aes(group = 1)) +  
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) + 
+  labs(y = "Dry Lean Mass (g)", x = "Total Surface Area (cm²)", title = "") +
+  geom_jitter(data = field_fem_comp, aes(x = TotalSA, y = DryLeanMass), 
+              width = 0.1, alpha = 0.25, size = 1.5) +
+  geom_text(aes(x = max(predicted_field_lean$x), 
+                y = max(predicted_field_lean$predicted), 
+                label = significance_lean), 
+            color = "black", size = 6, hjust = 10, vjust = -11) +
+  theme(axis.text.x = element_text(hjust = 0.5, size = 13), 
+        axis.text.y = element_text(size = 13), 
+        axis.title.x = element_text(size = 13), 
+        axis.title.y = element_text(size = 13), 
+        panel.background = element_blank(),
+        plot.background = element_blank(), 
+        panel.border = element_blank(),
+        axis.line = element_line(color = "black"))
+
+print(field_lean_sa_plot)
+
+# 4. Field water vs total SA
+
+
+# Get predictions from the model for TotalSA effect
+predicted_field_water <- ggpredict(field_water, terms = "TotalSA")
+
+# Get the p-value for TotalSA from the model summary
+summary_field_water <- summary(field_water)
+p_field_totalsa <- summary_field_water$coefficients["TotalSA", "Pr(>|t|)"]
+
+# Determine significance label based on the p-value
+significance <- ifelse(p_field_totalsa < 0.001, "***",
+                       ifelse(p_field_totalsa < 0.01, "**",
+                              ifelse(p_field_totalsa < 0.05, "*", "")))
+
+# Create the plot for TotalSA effect
+field_water_sa_plot <- ggplot(predicted_field_water, aes(x = x, y = predicted)) +
+  # Line for predicted values (grouping by x)
+  geom_line(size = 1, aes(group = 1)) +  # Ensures a line is drawn through the predicted points
+  
+  # Confidence interval ribbon for the prediction
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) + 
+  
+  labs(y = "Water (g)", x = "Total Surface Area (cm²)", title = "") +
+  
+  # Add raw data points with jitter
+  geom_jitter(data = field_fem_comp, aes(x = TotalSA, y = WaterMass), 
+              width = 0.1, alpha = 0.25, size = 1.5) +
+  
+  # Add significance label in the top-right corner
+  geom_text(aes(x = max(predicted_field_water$x), 
+                y = max(predicted_field_water$predicted), 
+                label = significance), 
+            color = "black", size = 6, hjust = 10, vjust = -11) +
+  
+  # Adjust theme and formatting
+  theme(
+    axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
+    axis.text.y = element_text(size = 13),               # Y-axis label size
+    axis.title.x = element_text(size = 13),              # X-axis title size
+    axis.title.y = element_text(size = 13),              # Y-axis title size
+    panel.background = element_blank(),                  # Remove background
+    plot.background = element_blank(),                   # Remove plot background
+    panel.border = element_blank(),                      # Remove panel border
+    axis.line = element_line(color = "black")            # Keep axis lines
+  )
+
+# Print the plot
+print(field_water_sa_plot)
+
+
+# Add significance labels and set the color to black for the water plot
+field_weight_sa_panel <- field_weight_sa_plot + 
+  geom_text(aes(x = max(predicted_field_weight$x), 
+                y = max(predicted_field_weight$predicted), 
+                label = significance_weight), 
+            color = "black", size = 6, hjust = 1.2, vjust = 2)
+
+field_fat_sa_panel <- field_fat_sa_plot + 
+  geom_text(aes(x = max(predicted_field_fat$x), 
+                y = max(predicted_field_fat$predicted), 
+                label = significance_fat), 
+            color = "black", size = 6, hjust = 5, vjust = -3.5)
+
+field_lean_sa_panel <- field_lean_sa_plot + 
+  geom_text(aes(x = max(predicted_field_lean$x), 
+                y = max(predicted_field_lean$predicted), 
+                label = significance_lean), 
+            color = "black", size = 6, hjust = 5, vjust = -4)
+
+# Add significance labels and set the color to black for the water plot
+field_water_sa_panel <- field_water_sa_plot + 
+  geom_text(aes(x = max(predicted_field_water$x), 
+                y = max(predicted_field_water$predicted), 
+                label = significance_water), 
+            color = "black", size = 6, hjust = 1.2, vjust = 2)
+
+field_fat_sa_panel <- field_fat_sa_panel + theme(
+  axis.title.x = element_blank(),
+  axis.text.x = element_blank()
+)
+
+field_weight_sa_panel <- field_weight_sa_panel + theme(
+  axis.title.x = element_blank(),
+  axis.text.x = element_blank()
+)
+
+# Combine the plots with adjustments for the tag position
+field_multisa_plot <- (field_weight_sa_panel + field_fat_sa_panel) / 
+  (field_lean_sa_panel + field_water_sa_plot) + 
+  plot_annotation(tag_levels = 'a') &
+  theme(plot.tag.position = c(0.22, 0.95))
+
+# Display the combined plot
+field_multisa_plot
+
+ggsave("plots/comboplot_Field_sa.png", field_multisa_plot, width = 27, height = 20, units = "cm", dpi = 300,)
+
+
+
 
 ################# DESCRIPTIVE SCATTERPLOTS ###########
 
@@ -913,3 +1632,34 @@ lm_maxtemp = lm(MaxDayTemp ~ Location, data = daily_summary)
 Anova(lm_maxtemp)
 plot(allEffects(lm_maxtemp))
 summary(lm_maxtemp)
+
+
+
+##########################RANDOM STUFF I NEED################################
+
+# Count of butterflies that came from couples
+
+counts_GH <- GH_data %>%
+  filter(Couple %in% c("Jacob", "MVD", "PCD", "TWA","S47") | is.na(Couple)) %>%
+  count(Couple, name = "Count")
+
+counts_field <- Field_data %>%
+  filter(Couple %in% c("Jacob", "MVD", "PCD", "TWA","S47") | is.na(Couple)) %>%
+  count(Couple, name = "Count")
+
+counts_allLocs <- summarydat %>%
+  filter(Couple %in% c("Jacob", "MVD", "PCD", "TWA","S47") | is.na(Couple)) %>%
+  count(Couple, name = "Count")
+
+unique_counts <- gh_TreatmentData %>%
+  filter(Couple %in% c("Jacob", "MVD", "PCD", "TWA","S47") | is.na(Couple)) %>%
+  group_by(Couple) %>%
+  summarise(Unique_Count = n_distinct(ID))
+unique_counts
+
+# View the result
+print(counts_GH)
+print(counts_field)
+print(counts_allLocs)
+
+

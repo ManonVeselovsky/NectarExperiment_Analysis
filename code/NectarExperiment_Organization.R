@@ -15,7 +15,7 @@ treatmentdat = TreatmentData
 ForewingMeasurements = read.csv("data/ForewingMeasurements.csv")
 FloralMeasurements = read.csv("data/FloralMeasurements.csv")
 FatData = read.csv("data/FatExtractions.csv")
-temp_data = read.csv("data/TemperatureData.csv")
+tempdat = read.csv("data/TemperatureData.csv")
 library(dplyr)
 library(tidyr) #to separate date from time in tempdat
 library(lubridate) #to convert date to julian date
@@ -131,20 +131,22 @@ experimentdat$RelWeightGain_day10<-experimentdat$RawWeightGain_day10/experimentd
 
 floraldat = FloralMeasurements
 
-floraldat$Radius = floraldat$Diameter/2
+#Convert diameter from mm to cm and into radius
+floraldat$Radius_cm = (floraldat$Diameter/2)/10
+floraldat$Height_cm = floraldat$Height/10
 
 # Calculate floral resource surface area for a single floral unit with height (as bottomless cylinders)
 cylFlowers = floraldat[which(floraldat$AreaType=="CircHeight"),]
 
 #Calculate floral area for a single floral unit with height (bottomless cylinder) (2*pi*r*h + pi*r^2)
-cylFlowers$SurfaceArea = 2*pi*cylFlowers$Radius*cylFlowers$Height + pi*cylFlowers$Radius^2
+cylFlowers$SurfaceArea = 2*pi*cylFlowers$Radius_cm*cylFlowers$Height_cm + pi*cylFlowers$Radius_cm^2
 
 
 # Calculate floral resource surface area a single floral unit without height (simple circles)
 circFlowers = floraldat[which(floraldat$AreaType=="Circular"),]
 
 # Circular flower surface area (pi r^2)
-circFlowers$SurfaceArea = 2*pi*circFlowers$Radius^2
+circFlowers$SurfaceArea = 2*pi*circFlowers$Radius_cm^2
 
 # Combine cylindrical and simple circle surface area flowers into single temp database
 foo5 = rbind(cylFlowers, circFlowers)
@@ -177,7 +179,6 @@ fatdat = FatData
 fatdat <- fatdat %>% 
   rename("DryMass" = "Dry.Mass","DryLeanMass"="Dry.Lean.Mass","WaterMass"="Water.Mass")
 experimentdat <- merge(experimentdat,fatdat[,c("DryMass","DryLeanMass", "RelDryFat", "DryFatMass","WaterMass","ID")],by.x=c("ID"),all.x=TRUE)
-
 
 ###### Re-order the data so that plants are in order of most visited to least visited
 # #Subset out the individual plants - order to be solalt, buddav, symeri, ********CHECK eutmac, echpur, rudhir, helhel (most to least visited)
@@ -235,35 +236,35 @@ experimentdat <- merge(experimentdat,fatdat[,c("DryMass","DryLeanMass", "RelDryF
 # experimentdat=newdat2
 
 ######### Temperature data - remove unnecessary columns, rename columns #############
-summary(temp_data)
-
-foo9 = temp_data
-names(foo9)[9] = "Temperature"
-names(foo9)[10] = "Light"
-names(foo9)[7] = "EDT"
-
-# Convert the two-digit Year to a four-digit format
-foo9$Year <- ifelse(foo9$Year < 100, foo9$Year + 2000, foo9$Year)
-
-# Step 1: Combine the Year, Month, and Day columns into a single Date column
-foo9$Date <- as.Date(with(foo9, paste(Year, Month, Day, sep = "-")), format = "%Y-%m-%d")
-
-# Step 2: Convert the Date column to Julian day
-foo9$JulianDate <- yday(foo9$Date)
-
-# Create a new column that combines EDT and AM/PM
-foo9$Time12hr <- paste(foo9$EDT, foo9$AM.PM, sep = " ")
-
-# Convert the 12-hour time format with seconds into a 24-hour time format
-foo9$Time24hr <- format(strptime(foo9$Time12hr, format = "%I:%M:%S %p"), format = "%H:%M:%S")
+# load data files
+tempdat <-read.csv("data/TemperatureData.csv")
 
 
-foo10 = subset(foo9, select = c("Location","Date", "JulianDate","Time24hr", "Temperature", "Light"))
+##### REFORMAT DATA
+# Process data
+tempdat <- tempdat %>%
+  mutate(
+    # Combine Month, Day, and Year into a single date
+    Date = as.Date(paste(Year, Month, Day, sep = "-"), format = "%y-%m-%d"),
+    
+    # Calculate Julian date relative to the start of the year for each row
+    JulianDate = as.numeric(Date - as.Date(paste(Year, "01", "01", sep = "-"), format = "%y-%m-%d") + 1),
+    
+    # Combine GMT and AM/PM into a single time string
+    TimeString = paste(GMT, AM.PM),
+    
+    # Parse TimeString into a proper time object and convert to 24-hour format
+    Time24Hr = format(strptime(TimeString, format = "%I:%M:%S %p"), "%H:%M:%S")
+  )
 
+# Rename the 9th and 10th columns
+colnames(tempdat)[9:10] <- c("Temperature", "Lux")
 
-tempdat = foo10
+# Reduce the dataset and rearrange columns
+tempdat <- tempdat %>%
+  select(Location, Date, JulianDate, TimeString, Time24Hr, Temperature, Lux)
+
 ############ FINAL CLEAN-UP #####################
-
 
 summarydat = experimentdat
 TreatmentData_p = treatmentdat
