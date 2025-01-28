@@ -74,27 +74,7 @@ forewingdat = subset(ForewingMeasurements, select=c("ID", "ForewingLength", "For
 experimentdat<-merge(experimentdat, forewingdat[,c("ID", "ForewingLength", "ForewingDamage")], by.x=c("ID"), all=TRUE)
 treatmentdat<-merge(treatmentdat, forewingdat[,c("ID", "ForewingLength", "ForewingDamage")], by.x=c("ID"), all=TRUE)
 
-# for butterflies that were weighed while dead (see notes on raw datasheet), remove those values
-experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
 
-# # remove individuals that do not have a day 0 weight
-# experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
-# experimentdat = subset(experimentdat, experimentdat$ID != "VH30")
-
-# # remove individuals that do not have a day 5 weight
-# experimentdat = subset(experimentdat, experimentdat$ID != "Unknown1")
-
-# remove individuals that do not have a day 7 weight
-experimentdat = subset(experimentdat, experimentdat$ID != "Jacob8")
-experimentdat = subset(experimentdat, experimentdat$ID != "TWA74")
-experimentdat = subset(experimentdat, experimentdat$ID != "Unknown1")
-experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
-
-
-# remove individuals that do not have the number of flowering heads recorded
-experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
-
-expdat_78 = experimentdat
 ############ RAW WEIGHT GAIN
 
 #Raw weight gain day 1 calculation (Day 1 weight minus day 0 weight)
@@ -173,6 +153,35 @@ foo8$TotalSA = foo8$FlowerHeads*foo8$SurfaceArea
 # Merge the TotaSA column into the processed database
 experimentdat <- merge(experimentdat,foo7[,c("TotalSA","ID")],by=c("ID"),all.x = TRUE)
 treatmentdat = foo8
+
+# for butterflies that were weighed while dead (see notes on raw datasheet)
+experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
+
+# # remove individuals that do not have a day 0 weight
+# experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
+# experimentdat = subset(experimentdat, experimentdat$ID != "VH30")
+
+# # remove individuals that do not have a day 5 weight
+# experimentdat = subset(experimentdat, experimentdat$ID != "Unknown1")
+
+# remove individuals that do not have a day 7 weight
+experimentdat = subset(experimentdat, experimentdat$ID != "Jacob8")
+experimentdat = subset(experimentdat, experimentdat$ID != "TWA74")
+experimentdat = subset(experimentdat, experimentdat$ID != "Unknown1")
+experimentdat = subset(experimentdat, experimentdat$ID != "VH24")
+
+
+treatmentdat = subset(treatmentdat, treatmentdat$ID != "Jacob8")
+treatmentdat = subset(treatmentdat, treatmentdat$ID != "TWA74")
+treatmentdat = subset(treatmentdat, treatmentdat$ID != "Unknown1")
+treatmentdat = subset(treatmentdat, treatmentdat$ID != "VH24")
+
+# remove individuals that do not have the number of flowering heads recorded
+experimentdat = subset(experimentdat, experimentdat$ID != "VH23")
+treatmentdat = subset(treatmentdat, treatmentdat$ID != "VH23")
+
+expdat_78 = experimentdat
+
 
 ################### FAT DATA #################
 fatdat = FatData

@@ -1,6 +1,7 @@
 ### Statistical analysis script
 ### Written by M. Veselovsky
-### Last modified 2024-12-10
+### Last modified 2025-01-14
+
 rm(list=ls())
 
 library(lmerTest)
@@ -15,6 +16,8 @@ library(effects)
 library(officer)
 library(knitr)
 library(ggeffects)
+library(grid)
+library(gridExtra)
 library(emmeans)
 library(broom)
 library(tidyverse) #re-order categorical variables in effects plots
@@ -50,6 +53,19 @@ GH_data <- GH_data %>%
   filter(!(ID == "MVD47" & row_number() == 1)) %>%
   ungroup()
 
+# Identify and remove the first entry for MVD47 in GH_F_data (entered twice, 2nd entry has correct data)
+GH_F_data <- GH_F_data %>%
+  filter(!(ID == "MVD47" & row_number() == which(ID == "MVD47")[1]))
+
+# Remove entries where RawWeight_day10 is not NA for all body composition databases
+GH_F_data <- GH_F_data %>%
+  filter(is.na(RawWeight_day10))
+
+GH_data <- GH_data %>%
+  filter(is.na(RawWeight_day10))
+
+Field_data <- Field_data %>%
+  filter(is.na(RawWeight_day10))
 
 # Reorder the Plant factor in the original data
 GH_data$Plant <- factor(GH_data$Plant, levels = desired_order)
@@ -68,6 +84,14 @@ Field_data$Plant[Field_data$Plant == "SolAlt"] = "S. altissima"
 field_TreatmentData$Plant[field_TreatmentData$Plant == "EutMac"] = "E. maculatum"
 field_TreatmentData$Plant[field_TreatmentData$Plant == "SolAlt"] = "S. altissima"
 
+
+######Remove any weight measurements that are not on TrialDay 0, 1, 5, 7, or 10
+
+# Filter the dataset to retain only the desired TrialDay values
+gh_TreatmentData <- gh_TreatmentData %>%
+  filter(TrialDay %in% c(0, 1, 5, 7))
+head(gh_TreatmentData)
+
 ## Create a theme to use for plots
 my_plot_theme = theme_bw() +
   theme(panel.border = element_blank(),
@@ -80,7 +104,7 @@ my_plot_theme = theme_bw() +
   )
 
 ##############################################################################################################################
-############################ FINAL MODELS FOR EACH VARIABLE ##################################################
+###############################################################################################
 
 ########## 0. General statistics
 
@@ -128,18 +152,8 @@ ggsave("plots/s3_PlantOverlap.jpeg", plant_plot, width = 27, height = 25, units 
 ############################################################################################################
 ############################ 1. Greenhouse Plants ########################################################
 ######### 1.1 WEIGHT EFFECTS
-mean_weight <- mean(gh_TreatmentData$Weight[gh_TreatmentData$TrialDay != 0], na.rm = TRUE)
-mean_weight
-count(gh_TreatmentData)
 
-# Calculate standard error
-std_error_weight_day7 <- sd(gh_TreatmentData$Weight[gh_TreatmentData$TrialDay == 7], na.rm = TRUE) / 
-  sqrt(sum(!is.na(gh_TreatmentData$Weight[gh_TreatmentData$TrialDay == 7])))
-
-
-# Display results
-mean_weight
-std_error_weight_day7
+class(gh_TreatmentData$TrialDay)
 
 # Create the plot
 ggplot(gh_TreatmentData, aes(x = TrialDay, y = Weight, group = ID, color = as.factor(ID))) +
@@ -148,7 +162,7 @@ ggplot(gh_TreatmentData, aes(x = TrialDay, y = Weight, group = ID, color = as.fa
   labs(
     title = "Individual Butterfly Weight Trajectories with Overall Trend",
     x = "Trial Day",
-    y = "Butterfly Weight (mg)",
+    y = "Butterfly Weight (g)",
     color = "Butterfly ID"
   ) +
   theme_minimal(base_size = 14) +
@@ -159,9 +173,22 @@ ggplot(gh_TreatmentData, aes(x = TrialDay, y = Weight, group = ID, color = as.fa
   )
 
 # overall_weight = lmer(Weight~Plant+TotalSA+ForewingLength+OrigWeight+Sex+TrialDay+DateWeighed+EnclCol+(1|ID),data=gh_TreatmentData)
- 
+
+#Remove the day 10 observations - just keep the 0, 1, 5, 7
+
+gh_TreatmentData
+
+
 interact_weight = lmer(Weight~Plant*TrialDay+TotalSA+ForewingLength+Sex+EnclCol+(1|ID),data=gh_TreatmentData)
 
+# Extract the slopes (TrialDay effects) by Plant
+slopes = emtrends(interact_weight, pairwise ~ Plant, var = "TrialDay")
+
+# View results
+slopes$emtrends  # Estimated slopes by plant
+slopes$contrasts # Pairwise comparisons of slopes
+
+emmip(interact_weight, Plant ~ TrialDay, at = list(TrialDay = 7)) # To show continuous slopes
 # Extract the data used in the model
 model_data_interact_weight <- interact_weight@frame
 
@@ -172,27 +199,135 @@ butterfly_count_by_plant <- model_data_interact_weight %>%
 
 print(butterfly_count_by_plant)
 
-
 check_model(interact_weight) #Trialday*Plant interaction shows multicollinearity but this is inherent with an interaction term
 # Use the model without interaction terms to check multicollinearity
 collinearity_check = lmer(Weight~Plant + TrialDay+TotalSA+ForewingLength+Sex+EnclCol+(1|ID),data=gh_TreatmentData)
 check_model(collinearity_check) #no issues with collinearity or other 
 
-# Step 1: Get emmeans for the interaction at TrialDay = 7
-interaction_emmeans <- emmeans(interact_weight, ~ Plant * TrialDay, 
-                               at = list(TrialDay = 7))  # Fix TrialDay at 7
-tukey_weight = emmeans(interact_weight, ~ Plant * TrialDay, 
-                       at = list(TrialDay = 7))  # Fix TrialDay at 7
+# 
+# 
+# # Generate predictions for the interaction effect
+# preds <- ggpredict(interact_weight, terms = c("TrialDay [all]", "Plant"))
+# 
+# # Create the plot
+# ggplot(preds, aes(x = x, y = predicted, color = group, fill = group)) +
+#   geom_line(size = 1) + # Trend lines for each plant group
+#   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, color = NA) + # Confidence intervals
+#   labs(
+#     x = "Trial Day",
+#     y = "Weight (g)",
+#     color = "Plant",
+#     fill = "Plant"
+#   ) +
+#   theme_minimal() +
+#   theme(
+#     axis.title = element_text(size = 14),
+#     axis.text = element_text(size = 12),
+#     legend.title = element_text(size = 13),
+#     legend.text = element_text(size = 11)
+#   )
 
-tukey_weight
+# Extract pairwise comparisons of slopes
+pairwise_slopes <- emtrends(interact_weight, pairwise ~ Plant, var = "TrialDay")
+
+# Filter for significant differences
+significant_pairs <- pairwise_slopes$contrasts %>%
+  as.data.frame() %>%
+  filter(p.value < 0.05) %>%
+  mutate(pair = gsub(" - ", "_vs_", contrast)) # Replace '-' with '_vs_' for naming
+
+# Function to generate predictions for two plants
+generate_pairwise_preds <- function(pair) {
+  plants <- strsplit(pair, "_vs_")[[1]] # Split the pair into two plants
+  preds <- ggpredict(interact_weight, terms = c("TrialDay [all]", "Plant")) %>%
+    filter(group %in% plants) %>%
+    mutate(pair = pair)
+  return(preds)
+}
+
+# Apply function to all significant pairs
+pairwise_preds <- bind_rows(lapply(significant_pairs$pair, generate_pairwise_preds))
+
+# ggplot(pairwise_preds, aes(x = x, y = predicted, color = group, fill = group)) +
+#   geom_line(size = 1) + # Trend lines
+#   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, color = NA) + # Confidence intervals
+#   labs(
+#     x = "Trial Day",
+#     y = "Weight (g)",
+#     color = "Plant",
+#     fill = "Plant",
+#     title = "Significant Pairwise Comparisons of Plant Effects"
+#   ) +
+#   facet_wrap(~pair, scales = "free_y") + # One panel per pair
+#   theme_minimal() +
+#   theme(
+#     axis.title = element_text(size = 14),
+#     axis.text = element_text(size = 12),
+#     strip.text = element_text(size = 12, face = "bold"),
+#     legend.position = "bottom"
+#   )
+# 
+
+# Map plant codes to their scientific names
+plant_labels <- c(
+  "BudDav" = "Buddleja davidii",
+  "SymEri" = "Symphyotrichum ericoides",
+  "RudHir" = "Rudbeckia hirta",
+  "SolAlt" = "Solidago altissima",
+  "EchPur" = "Echinacea purpurea",
+  "HelHel" = "Heliopsis helianthoides"
+)
+
+# Generate the plot
+weight_slope_plot = ggplot(pairwise_preds, aes(x = x, y = predicted, color = group, fill = group)) +
+  geom_line(size = 1) + 
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, color = NA) +
+  facet_wrap(~pair, scales = "free_y") + # One facet per pair
+  labs(x = "Trial Day", y = "Weight (g)") +
+  scale_color_manual(
+    values = c("#F8766D", "#00BFC4", "#7CAE00", "#C77CFF", "#F564E3", "#619CFF"),
+    labels = lapply(plant_labels, function(name) bquote(italic(.(name))))
+  ) +
+  scale_fill_manual(
+    values = c("#F8766D", "#00BFC4", "#7CAE00", "#C77CFF", "#F564E3", "#619CFF"),
+    labels = lapply(plant_labels, function(name) bquote(italic(.(name))))
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    legend.position = c(0.85, 0.2),  # Positions the legend at the bottom right
+    legend.justification = c(1, 0),  # Justifies the legend to the bottom-right corner
+    strip.text = element_blank(), # Remove facet titles
+    legend.title = element_blank(), # No legend title
+    panel.grid = element_blank(),
+    panel.background = element_rect(fill = "white")
+  )
+
+weight_slope_plot
+ggsave("plots/fig3_comboplot_weight+BodyComp.png", weight_slope_plot, width = 27, height = 25, units = "cm", dpi = 300,)
+
+
+# Step 1: Get emmeans for the interaction at TrialDay = 7
+# interaction_emmeans <- emmeans(interact_weight, ~ Plant * TrialDay, 
+#                                at = list(TrialDay = 7))  # Fix TrialDay at 7
+interaction_emmeans <- emmeans(interact_weight, ~ Plant * TrialDay)
+
+
+# tukey_weight = emmeans(interact_weight, ~ Plant * TrialDay, 
+#                        at = list(TrialDay = 7))  # Fix TrialDay at 7
+
+interaction_emmeans
 
 # Step 2: Perform pairwise comparisons for Plant (Tukey-adjusted)
 plant_comparisons <- contrast(interaction_emmeans, 
                               method = "pairwise", 
                               simple = "each",  # Compare within each TrialDay
                               combine = FALSE,  # Only focus on Plant comparisons
-                              adjust = "tukey")  # Force Tukey adjustment
+                              # adjust = "tukey" # Force Tukey adjustment
+                              )  
 
+plant_comparisons
 # View pairwise results
 print(plant_comparisons)
 
@@ -234,19 +369,88 @@ interaction_plot <- ggplot(interaction_emmeans_df, aes(x = Plant, y = emmean)) +
 
 print(interaction_plot)
 
+## Check that the scatterplot of the raw data makes sense for each species by looking at the raw data
+## plots
+# trial_day_7_data <- subset(gh_TreatmentData, TrialDay == 7)
+# 
+# ggplot(trial_day_7_data, aes(x = Plant, y = Weight)) +
+#   geom_jitter(width = 0.2, alpha = 0.7, color = "blue") + # Add raw data points with jitter for visibility
+#   stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = 0.2, color = "red") + # Add error bars for mean and CI
+#   stat_summary(fun = mean, geom = "point", shape = 18, size = 4, color = "red") + # Add mean points
+#   labs(
+#     x = "Plant Species",
+#     y = "Weight",
+#     title = "Raw Weights on TrialDay = 7 by Plant Species"
+#   ) +
+#   theme_minimal(base_size = 14) +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1) # Adjust x-axis label angle for better readability
+#   )
 
 Anova(interact_weight, type = 3)
 summary(interact_weight)
 
 #Create a table of the model output in a word doc
 tab_model(interact_weight, 
-          file = "tables/Weight_Model_Results.doc",   # Export to a Word document
+          file = "tables/1_gh_1_weight.doc",   # Export to a Word document
           show.p = TRUE, # Add significance stars
           show.stat = TRUE,
           show.se = TRUE,
           show.df = TRUE)                   
 
+# Identify rows with NA in model variables
+model_vars <- c("Weight", "Plant", "TrialDay", "TotalSA", "ForewingLength", "Sex", "EnclCol", "ID")
+excluded_rows <- gh_TreatmentData %>%
+  filter(rowSums(is.na(across(all_of(model_vars)))) > 0)
+
+# View excluded rows
+excluded_rows
+
+# Count unique IDs with a TrialDay = 0 measurement
+count_trialday0 <- gh_TreatmentData %>%
+  filter(TrialDay == 0) %>%
+  summarize(count = n_distinct(ID))
+
+# View the result
+count_trialday0
+
+# Count unique IDs with a TrialDay = 1 measurement
+count_trialday1 <- gh_TreatmentData %>%
+  filter(TrialDay == 1) %>%
+  summarize(count = n_distinct(ID))
+
+# View the result
+count_trialday1
+
+# Count unique IDs with a TrialDay = 5 measurement
+count_trialday5 <- gh_TreatmentData %>%
+  filter(TrialDay == 5) %>%
+  summarize(count = n_distinct(ID))
+
+# View the result
+count_trialday5
+
+# Count unique IDs with a TrialDay = 7 measurement
+count_trialday7 <- gh_TreatmentData %>%
+  filter(TrialDay == 7) %>%
+  summarize(count = n_distinct(ID))
+
+count_trialday7
+
+
+
+
+# Count unique IDs with a TrialDay = 7 measurement
+count_trialday7 <- gh_TreatmentData %>%
+  filter(TrialDay == 7) %>%
+  summarize(count = n_distinct(ID))
+
+count_trialday7
+
 plot(ggpredict(interact_weight))
+
+row_count <- nrow(gh_TreatmentData)
+row_count
 
 #####################################################################################################
 ############################ 1.2 FAT EFFECTS ########################################################
@@ -257,6 +461,7 @@ normal_fat = lm(DryFatMass ~ Plant + Sex + ForewingLength +RawWeight_day0 + Tota
 plot(allEffects(normal_fat))
 
 check_model(overall_fat)
+check_model(normal_fat)
 # Get the model data from the overall_fat model
 model_data_overall_fat <- model.frame(overall_fat)
 
@@ -270,7 +475,7 @@ print(butterfly_count_by_plant_overall_fat)
 Anova(overall_fat)
 #Create a table of the model output in a word doc
 tab_model(overall_fat, 
-          file = "tables/Fat_Results.doc",   # Export to a Word document
+          file = "tables/1_gh_2_fat.doc",   # Export to a Word document
           show.p = TRUE,                   
           show.stat = TRUE,
           show.se = TRUE,
@@ -279,19 +484,12 @@ tab_model(overall_fat,
 
 # Tukey-adjusted pairwise comparisons for Plant groups
 tukey_fat <- emmeans(overall_fat, pairwise ~ Plant, adjust = "tukey")
-
+Anova(overall_fat)
 tukey_contrasts <- tukey_fat$contrasts #Extract the contrast letters from the mult-comp
 
 # tidy_fat <- tidy(tukey_contrasts)
 # tidy_fat <- tidy_fat %>%
 #   mutate(across(where(is.numeric), round, 3))
-
-
-# Create a Word document and add the table as a proper Word table
-my_doc <- read_docx() %>%
-  body_add_par("Tukey-adjusted pairwise comparisons for Plant groups") %>%
-  body_add_table(value = tidy_fat) %>%  # Add the dataframe directly as a table
-  print(target = "tables/Tukey_Contrasts_fat.docx")  # Export the document to the target path
 
 tukey_weight
 
@@ -368,7 +566,7 @@ overall_lean = lm(DryLeanMass ~ Plant + Sex + ForewingLength + RawWeight_day0 + 
 
 #Create a table of the model output in a word doc
 tab_model(overall_lean, 
-          file = "tables/Lean_Results.doc",   # Export to a Word document
+          file = "tables/1_gh_3_lean.doc",   # Export to a Word document
           show.p = TRUE, # Add significance stars
           show.stat = TRUE,
           show.se = TRUE,
@@ -381,6 +579,7 @@ Anova(overall_lean)
 
 # Tukey-adjusted pairwise comparisons for Plant groups
 tukey_lean <- emmeans(overall_lean, pairwise ~ Plant, adjust = "tukey")
+tukey_lean
 
 # Extracting the compact letter display (CLD) to get group letters
 cld_lean <- cld(tukey_lean$emmeans, Letters = letters)
@@ -526,7 +725,7 @@ water_plot <- ggplot(effects_water_plant, aes(x = x, y = predicted)) +
 print(water_plot)
 
 tab_model(overall_water, 
-          file = "tables/Water_Results.doc",   # Export to a Word document
+          file = "tables/1_gh_4_Water.doc",   # Export to a Word document
           show.p = TRUE, # Add significance stars
           show.stat = TRUE,
           show.se = TRUE,
@@ -571,6 +770,15 @@ ggsave("plots/fig3_comboplot_weight+BodyComp.png", gh_multi_panel_plot, width = 
 ############################## 2. GH VS FIELD ########################################################
 ############################ 2.1 WEIGHT ########################################################
 
+######Remove any weight measurements that are not on TrialDay 0, 1, 5, 7, or 10
+
+# Filter the dataset to retain only the desired TrialDay values
+gh_field_weight <- gh_field_weight %>%
+  filter(TrialDay %in% c(0, 1, 5, 7))
+head(gh_TreatmentData)
+
+
+
 ghf_weight = lmer(Weight~ExpLoc*TrialDay+ForewingLength+Sex+(1|ID),data=gh_field_weight)
 
 check_model(ghf_weight)
@@ -579,18 +787,31 @@ Anova(ghf_weight, type = 3)
 summary_model <- summary(ghf_weight)
 summary_model
 
+############# Get the number of individuals tested in each exp location, and how many extended to day 10
+# Extract the data used in the model
+model_data_ghf_weight <- ghf_weight@frame
+
+# Count individuals by ExpLoc
+individuals_by_exploc <- model_data_ghf_weight %>%
+  group_by(ExpLoc) %>%
+  summarise(TotalButterflies = n_distinct(ID))
+
+print(individuals_by_exploc)
+
+############ make the prediction figure
+
 # Extract predictions for ExpLoc (without Tukey adjustment)
 effects_weight_exploc <- ggpredict(ghf_weight, terms = "ExpLoc", ci.lvl = 0.95)
 
 # Ensure ExpLoc is treated as a factor
 effects_weight_exploc$x <- factor(effects_weight_exploc$x)
 
-# Create a label dataframe for positioning significance label
-labels_df_exploc <- data.frame(
-  ExpLoc = effects_weight_exploc$x,
-  Label = significance_label,
-  y = effects_weight_exploc$conf.high + 0.01  # Position just above upper confidence interval
-)
+# # Create a label dataframe for positioning significance label
+# labels_df_exploc <- data.frame(
+#   ExpLoc = effects_weight_exploc$x,
+#   Label = significance_label,
+#   y = effects_weight_exploc$conf.high + 0.01  # Position just above upper confidence interval
+# )
 ghf_weight_summary = summary(ghf_weight)
 
 # Extract the p-value for ExpLoc (ExpLocGreenhouse as per the correct coefficient name)
@@ -642,7 +863,7 @@ exploc_weight_plot
 summary(ghf_weight)
 check_model(ghf_weight)
 tab_model(ghf_weight, 
-          file = "tables/ghf_Weight.doc",   # Export to a Word document
+          file = "tables/2_ghf_1_weight.doc",   # Export to a Word document
           show.p = TRUE, # Add significance stars
           show.stat = TRUE,
           show.se = TRUE,
@@ -652,17 +873,31 @@ tab_model(ghf_weight,
 
 #####################################################################################################
 ############################ 2.2 GH-Field Fat comparison ############################
-
+###########################
 # Fit the model
-ghf_fat <- lm(DryFatMass ~ ExpLoc + Sex+RawWeight_day0, data = GH_F_data)
+ghf_fat <- lm(DryFatMass ~ ExpLoc + RawWeight_day0 + Sex, data = GH_F_data)
 
 check_model(ghf_fat)
 vif(ghf_fat)
 
+
+############# Get the number of individuals tested in each exp location, and how many extended to day 10
+# Get the model data from the overall_fat model
+model_data_ghf_fat <- model.frame(ghf_fat)
+
+# Count the number of butterflies tested on each plant (by counting rows for each Plant)
+butterfly_count_ghf_fat <- model_data_ghf_fat %>%
+  group_by(ExpLoc) %>%
+  summarise(TotalButterflies = n())
+print(butterfly_count_ghf_fat)
+
+
+##########
+
 # Get the summary of the model
 ghf_fat_summary <- summary(ghf_fat)
 
-anova_field_fat <- Anova(field_fat)
+anova_field_fat <- Anova(ghf_fat)
 p_field_fat <- anova_field_fat["Plant", "Pr(>F)"]  # Adjust depending on output format
 significance_fat <- ifelse(p_field_fat < 0.001, "***",
                            ifelse(p_field_fat < 0.01, "**",
@@ -718,16 +953,18 @@ summary(ghf_fat)
 check_model(ghf_fat)
 
 tab_model(ghf_fat, 
-          file = "tables/ghf_Fat.doc",   # Export to a Word document
+          file = "tables/2_ghf_2_fat.doc",   # Export to a Word document
           show.p = TRUE, # Add significance stars
           show.stat = TRUE,
           show.se = TRUE,
-          show.df = TRUE
+          show.df = TRUE,
+          show.ci = FALSE
 ) 
+tab_model(ghf_fat)
 
 ############################ 2.3 GH-Field Lean mass comparison #############################
 # Fit the model
-ghf_lean <- lm(DryLeanMass ~ ExpLoc + Sex+RawWeight_day0, data = GH_F_data)
+ghf_lean <- lm(DryLeanMass ~ ExpLoc+RawWeight_day0 + Sex, data = GH_F_data)
 
 # Calculate VIF for the model
 vif_values <- vif(ghf_lean)
@@ -798,7 +1035,7 @@ summary(ghf_lean)
 check_model(ghf_lean)
 
 tab_model(ghf_lean, 
-          file = "tables/ghf_Lean.doc",   # Export to a Word document
+          file = "tables/2_ghf_3_lean.doc",   # Export to a Word document
           show.p = TRUE, # Add significance stars
           show.stat = TRUE,
           show.se = TRUE,
@@ -810,7 +1047,7 @@ tab_model(ghf_lean,
 ############### 2.4 Greenhouse-Field Water Mass ################################
 
 # Fit the model
-ghf_water <- lm(WaterMass ~ ExpLoc+Sex+RawWeight_day0, data = GH_F_data)
+ghf_water <- lm(WaterMass ~ ExpLoc+RawWeight_day0+Sex, data = GH_F_data)
 
 # Get the summary of the model
 ghf_water_summary <- summary(ghf_water)
@@ -846,7 +1083,7 @@ water_loc_plot
 
 summary(ghf_water)
 tab_model(ghf_water, 
-          file = "tables/ghf_Water.doc",   # Export to a Word document
+          file = "tables/2_ghf_3_water.doc",   # Export to a Word document
           show.p = TRUE, # Add significance stars
           show.stat = TRUE,
           show.se = TRUE,
@@ -888,8 +1125,35 @@ sum(field_fem_comp$EnclCol =="FBlack")
 
 ############################ 3.1 FIELD WEIGHT ###############################
 
+######Remove any weight measurements that are not on TrialDay 0, 1, 5, 7, or 10
+
+# Filter the dataset to retain only the desired TrialDay values
+field_fem_weight <- field_fem_weight %>%
+  filter(TrialDay %in% c(0, 1, 5, 7))
+head(field_fem_weight)
+
+
 field_weight = lmer(Weight ~ Plant*TrialDay+TotalSA+(1|EnclID/ID), data = field_fem_weight)
+summary(field_weight)
+# Count the number of unique individuals (ID) for each Plant (SolAlt, EutMac) in the field_fem_weight dataset
+individuals_by_plant <- field_fem_weight %>%
+  filter(Plant %in% c("S. altissima", "E. maculatum")) %>%
+  group_by(Plant) %>%
+  summarise(n_individuals = n_distinct(ID))
+
+# View the results
+print(individuals_by_plant)
+
 check_model(field_weight)
+
+tab_model(field_weight, 
+          file = "tables/3_field_1_weight.doc",   # Export to a Word document
+          show.p = TRUE, # Add significance stars
+          show.stat = TRUE,
+          show.se = TRUE,
+          show.df = TRUE,
+          show.ci = FALSE
+) 
 
 
 
@@ -920,10 +1184,10 @@ field_weight_plot <- ggplot(predicted_field_weight, aes(x = x, y = predicted)) +
   geom_jitter(data = field_fem_weight, aes(x = Plant, y = centered_residuals), 
               width = 0.1, alpha = 0.25, size = 1.5, color = "grey30") +  # Use grey30 for residual points
   
-  # Add significance annotation
-  annotate("text", x = length(unique(predicted_field_weight$x)) + 0.3, 
-           y = max(predicted_field_weight$predicted) + 0.1, 
-           label = significance, size = 6) +
+  # # Add significance annotation
+  # annotate("text", x = length(unique(predicted_field_weight$x)) + 0.3, 
+  #          y = max(predicted_field_weight$predicted) + 0.1, 
+  #          label = significance, size = 6) +
   
   # Adjust theme and formatting to preserve your initial design
   theme(
@@ -984,7 +1248,7 @@ tab_model(field_weight)
 # Predicted effects for the model
 predicted_field_weight <- ggpredict(field_weight, terms = "Plant")
 
-# Create the plot for DryFatMass by ExpLoc
+# Create the plot for Weight by Plant
 field_weight_plot_rawdata <- ggplot(predicted_field_weight, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
@@ -994,11 +1258,11 @@ field_weight_plot_rawdata <- ggplot(predicted_field_weight, aes(x = x, y = predi
   geom_jitter(data = field_fem_weight, aes(x = Plant, y = Weight), 
               width = 0.1, alpha = 0.25, size = 1.5) +
   
-  # Add significance annotation
-  annotate("text", x = length(unique(predicted_field_weight$x)) + 0.3, 
-           y = max(predicted_field_weight$predicted) + 0.1, 
-           label = significance, size = 6) +
-  
+  # # Add significance annotation
+  # annotate("text", x = length(unique(predicted_field_weight$x)) + 0.3, 
+  #          y = max(predicted_field_weight$predicted) + 0.1, 
+  #          label = significance, size = 6) +
+  # 
   # Adjust theme and formatting
   theme(
         axis.text.x = element_text(hjust = 0.5, size = 13),  # X-axis label size
@@ -1017,26 +1281,42 @@ print(field_weight_plot_rawdata)
 ############################# 3.2 FIELD FAT ##########################
 # Fit the model
 field_fat <- lmer(DryFatMass ~ Plant+TotalSA+RawWeight_day0+(1|EnclID), data = field_fem_comp)
-check_model(field_fat)
 
-Anova(field_fat)
+# Count the number of unique individuals by Plant
+individuals_by_plant_fat <- field_fem_comp %>%
+  filter(Plant %in% c("S. altissima", "E. maculatum")) %>%  # Replace with actual plant species if needed
+  group_by(Plant) %>%
+  summarise(n_individuals = n_distinct(ID))
+
+# View the count of unique individuals
+print(individuals_by_plant_fat)
+
+
+
+check_model(field_fat)
+Anova(field_fat, type=3)
+summary(field_fat)
+tab_model(field_fat, 
+          file = "tables/3_field_2_fat.doc",   # Export to a Word document
+          show.p = TRUE, # Add significance stars
+          show.stat = TRUE,
+          show.se = TRUE,
+          show.df = TRUE,
+          show.ci = FALSE
+) 
 
 # Predict effects for the model
 predicted_field_fat <- ggpredict(field_fat, terms = "Plant")
 
-tab_model(field_fat)
-plot(allEffects(field_fat))
-
-# Create the plot for DryFatMass by ExpLoc
+# Create the plot for DryFatMass by Plant
 fat_field_plot_raw <- ggplot(predicted_field_fat, aes(x = x, y = predicted)) +
   geom_point(size = 3) +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
-  labs(y = "Fat (g)", x = "", title = "") +
+  labs(y = "Fat Mass (g)", x = "", title = "") +
   
   # Add raw data points with jitter
   geom_jitter(data = field_fem_comp, aes(x = Plant, y = DryFatMass), 
               width = 0.1, alpha = 0.25, size = 1.5) +
-  
   
   # Adjust theme and formatting
   theme(
@@ -1050,8 +1330,6 @@ fat_field_plot_raw <- ggplot(predicted_field_fat, aes(x = x, y = predicted)) +
     axis.line = element_line(color = "black"))           # Keep axis lines
 
 fat_field_plot_raw
-
-
 
 
 # Step 1: Get residuals for the model
@@ -1101,10 +1379,19 @@ field_fat_residual_plot
 ############################# 3.3 Field lean #####################################
 
 # Fit the model
-field_lean <- lmer(DryLeanMass ~ Plant+TotalSA+ForewingLength + (1|EnclID), data = field_fem_comp)
+field_lean <- lmer(DryLeanMass ~ Plant+TotalSA+RawWeight_day0 + (1|EnclID), data = field_fem_comp)
 check_model(field_lean)
 
 Anova(field_lean)
+
+tab_model(field_lean, 
+          file = "tables/3_field_3_lean.doc",   # Export to a Word document
+          show.p = TRUE, # Add significance stars
+          show.stat = TRUE,
+          show.se = TRUE,
+          show.df = TRUE,
+          show.ci = FALSE
+) 
 
 # Predict effects for the model
 predicted_field_lean <- ggpredict(field_lean, terms = "Plant")
@@ -1195,6 +1482,18 @@ check_model(field_water)
 
 Anova(field_water)
 
+
+tab_model(field_water, 
+          file = "tables/3_field_4_water.doc",   # Export to a Word document
+          show.p = TRUE, # Add significance stars
+          show.stat = TRUE,
+          show.se = TRUE,
+          show.df = TRUE,
+          show.ci = FALSE
+) 
+
+
+
 # Predict effects for the model
 predicted_field_water <- ggpredict(field_water, terms = "Plant")
 
@@ -1222,7 +1521,7 @@ water_field_plot <- ggplot(predicted_field_water, aes(x = x, y = predicted)) +
 
 water_field_plot
 
-field_multi_plot <- (field_weight_plot + fat_field_plot) / (lean_field_plot + water_field_plot) + 
+field_multi_plot <- (field_weight_plot_rawdata + fat_field_plot_raw) / (lean_field_plot_raw + water_field_plot) + 
   plot_annotation(tag_levels = 'a')&
   theme(plot.tag.position = c(0.22, .95))
 
@@ -1285,24 +1584,34 @@ print(field_water_residual_plot)
 # 1. field weight vs total surface area
 # 1. For `field_weight`
 predicted_field_weight <- ggpredict(field_weight, terms = "TotalSA")
-summary_field_weight <- summary(field_weight)
+anova_field_weight <- Anova(field_weight, type = 3)
+# Extract the p-value for TotalSA
+p_field_weight_totalsa <- anova_field_weight["TotalSA", "Pr(>Chisq)"]
 
-p_field_weight_totalsa <- summary_field_weight$coefficients["TotalSA", "Pr(>|t|)"]
+# Display the extracted p-value (for debugging)
+print(p_field_weight_totalsa)
+
+# Determine significance stars based on the p-value
 significance_weight <- ifelse(p_field_weight_totalsa < 0.001, "***",
                               ifelse(p_field_weight_totalsa < 0.01, "**",
                                      ifelse(p_field_weight_totalsa < 0.05, "*", "")))
 
-# Plot for `field_weight`
+# Display the significance level (for debugging)
+print(significance_weight)
+
+# Plot with the corrected p-value and significance star
 field_weight_sa_plot <- ggplot(predicted_field_weight, aes(x = x, y = predicted)) +
   geom_line(size = 1, aes(group = 1)) +  # Ensures a line is drawn
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) + 
   labs(y = "Weight (g)", x = "Total Surface Area (cm²)", title = "") +
   geom_jitter(data = field_fem_weight, aes(x = TotalSA, y = Weight), 
               width = 0.1, alpha = 0.25, size = 1.5) +
-  geom_text(aes(x = max(predicted_field_weight$x), 
-                y = max(predicted_field_weight$predicted), 
-                label = significance_weight), 
-            color = "black", size = 6, hjust = 10, vjust = -11) +
+  # Display the significance star
+  # annotate("text", 
+  #          x = max(predicted_field_weight$x)-8000, 
+  #          y = max(predicted_field_weight$predicted) + 0.17, 
+  #          label = significance_weight, 
+  #          size = 7, color = "black") +
   theme(axis.text.x = element_text(hjust = 0.5, size = 13), 
         axis.text.y = element_text(size = 13), 
         axis.title.x = element_text(size = 13), 
@@ -1311,7 +1620,6 @@ field_weight_sa_plot <- ggplot(predicted_field_weight, aes(x = x, y = predicted)
         plot.background = element_blank(), 
         panel.border = element_blank(),
         axis.line = element_line(color = "black"))
-
 print(field_weight_sa_plot)
 
 
@@ -1429,8 +1737,8 @@ print(field_water_sa_plot)
 
 # Add significance labels and set the color to black for the water plot
 field_weight_sa_panel <- field_weight_sa_plot + 
-  geom_text(aes(x = max(predicted_field_weight$x), 
-                y = max(predicted_field_weight$predicted), 
+  geom_text(aes(x = max(predicted_field_weight$x)-6000, 
+                y = max(predicted_field_weight$predicted)+0.2, 
                 label = significance_weight), 
             color = "black", size = 6, hjust = 1.2, vjust = 2)
 
