@@ -178,112 +178,32 @@ ggplot(gh_TreatmentData, aes(x = TrialDay, y = Weight, group = ID, color = as.fa
 
 gh_TreatmentData
 
+# Fit the interaction model
+interact_weight = lmer(Weight ~ Plant * TrialDay + Sex + ForewingLength + EnclCol + TotalSA  + (1 | ID), data = gh_TreatmentData)
 
-interact_weight = lmer(Weight~Plant*TrialDay+TotalSA+ForewingLength+Sex+EnclCol+(1|ID),data=gh_TreatmentData)
+# Check model assumptions: Residuals and Collinearity
+check_model(interact_weight)  # Multicollinearity and residual diagnostics
 
-# Extract the slopes (TrialDay effects) by Plant
+# Check for significant slopes for TrialDay by Plant using emtrends
 slopes = emtrends(interact_weight, pairwise ~ Plant, var = "TrialDay")
+slopes$emtrends  # Show slopes estimates
+slopes$contrasts  # Show pairwise comparisons of slopes
 
-# View results
-slopes$emtrends  # Estimated slopes by plant
-slopes$contrasts # Pairwise comparisons of slopes
 
-emmip(interact_weight, Plant ~ TrialDay, at = list(TrialDay = 7)) # To show continuous slopes
-# Extract the data used in the model
-model_data_interact_weight <- interact_weight@frame
 
-# Count the number of unique butterflies tested on each plant
-butterfly_count_by_plant <- model_data_interact_weight %>%
-  group_by(Plant) %>%
-  summarise(TotalButterflies = n_distinct(ID))
+# Calculate y position for stars (max of the predicted values for each facet)
+y_star_position <- pairwise_preds %>%
+  group_by(pair) %>%
+  summarise(max_pred = max(predicted, na.rm = TRUE)) %>%
+  left_join(significant_pairs, by = "pair") %>%
+  mutate(y_position = max_pred * 1.05)  # Slightly offset stars above max predicted value
 
-print(butterfly_count_by_plant)
-
-check_model(interact_weight) #Trialday*Plant interaction shows multicollinearity but this is inherent with an interaction term
-# Use the model without interaction terms to check multicollinearity
-collinearity_check = lmer(Weight~Plant + TrialDay+TotalSA+ForewingLength+Sex+EnclCol+(1|ID),data=gh_TreatmentData)
-check_model(collinearity_check) #no issues with collinearity or other 
-
-# 
-# 
-# # Generate predictions for the interaction effect
-# preds <- ggpredict(interact_weight, terms = c("TrialDay [all]", "Plant"))
-# 
-# # Create the plot
-# ggplot(preds, aes(x = x, y = predicted, color = group, fill = group)) +
-#   geom_line(size = 1) + # Trend lines for each plant group
-#   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, color = NA) + # Confidence intervals
-#   labs(
-#     x = "Trial Day",
-#     y = "Weight (g)",
-#     color = "Plant",
-#     fill = "Plant"
-#   ) +
-#   theme_minimal() +
-#   theme(
-#     axis.title = element_text(size = 14),
-#     axis.text = element_text(size = 12),
-#     legend.title = element_text(size = 13),
-#     legend.text = element_text(size = 11)
-#   )
-
-# Extract pairwise comparisons of slopes
-pairwise_slopes <- emtrends(interact_weight, pairwise ~ Plant, var = "TrialDay")
-
-# Filter for significant differences
-significant_pairs <- pairwise_slopes$contrasts %>%
-  as.data.frame() %>%
-  filter(p.value < 0.05) %>%
-  mutate(pair = gsub(" - ", "_vs_", contrast)) # Replace '-' with '_vs_' for naming
-
-# Function to generate predictions for two plants
-generate_pairwise_preds <- function(pair) {
-  plants <- strsplit(pair, "_vs_")[[1]] # Split the pair into two plants
-  preds <- ggpredict(interact_weight, terms = c("TrialDay [all]", "Plant")) %>%
-    filter(group %in% plants) %>%
-    mutate(pair = pair)
-  return(preds)
-}
-
-# Apply function to all significant pairs
-pairwise_preds <- bind_rows(lapply(significant_pairs$pair, generate_pairwise_preds))
-
-# ggplot(pairwise_preds, aes(x = x, y = predicted, color = group, fill = group)) +
-#   geom_line(size = 1) + # Trend lines
-#   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, color = NA) + # Confidence intervals
-#   labs(
-#     x = "Trial Day",
-#     y = "Weight (g)",
-#     color = "Plant",
-#     fill = "Plant",
-#     title = "Significant Pairwise Comparisons of Plant Effects"
-#   ) +
-#   facet_wrap(~pair, scales = "free_y") + # One panel per pair
-#   theme_minimal() +
-#   theme(
-#     axis.title = element_text(size = 14),
-#     axis.text = element_text(size = 12),
-#     strip.text = element_text(size = 12, face = "bold"),
-#     legend.position = "bottom"
-#   )
-# 
-
-# Map plant codes to their scientific names
-plant_labels <- c(
-  "BudDav" = "Buddleja davidii",
-  "SymEri" = "Symphyotrichum ericoides",
-  "RudHir" = "Rudbeckia hirta",
-  "SolAlt" = "Solidago altissima",
-  "EchPur" = "Echinacea purpurea",
-  "HelHel" = "Heliopsis helianthoides"
-)
-
-# Generate the plot
-weight_slope_plot = ggplot(pairwise_preds, aes(x = x, y = predicted, color = group, fill = group)) +
-  geom_line(size = 1) + 
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, color = NA) +
+# Create the plot
+weight_slope_plot = ggplot(pairwise_preds, aes(x = x, y = predicted)) +
+  geom_line(aes(color = group), size = 1) +  # Use color as per the 'group'
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.2, color = NA) +
   facet_wrap(~pair, scales = "free_y") + # One facet per pair
-  labs(x = "Trial Day", y = "Weight (g)") +
+  labs(x = "Sampling Day", y = "Weight (g)") +
   scale_color_manual(
     values = c("#F8766D", "#00BFC4", "#7CAE00", "#C77CFF", "#F564E3", "#619CFF"),
     labels = lapply(plant_labels, function(name) bquote(italic(.(name))))
@@ -302,10 +222,17 @@ weight_slope_plot = ggplot(pairwise_preds, aes(x = x, y = predicted, color = gro
     legend.title = element_blank(), # No legend title
     panel.grid = element_blank(),
     panel.background = element_rect(fill = "white")
+  ) +
+  # Add star labels for significance
+  geom_text(
+    data = y_star_position, aes(x = 7, y = y_position, label = star),
+    color = "black", size = 6, hjust = 1
   )
 
+# Display the plot
 weight_slope_plot
-ggsave("plots/fig3_comboplot_weight+BodyComp.png", weight_slope_plot, width = 27, height = 25, units = "cm", dpi = 300,)
+
+ggsave("plots/weight_slope_plot.png", weight_slope_plot, width = 27, height = 25, units = "cm", dpi = 300,)
 
 
 # Step 1: Get emmeans for the interaction at TrialDay = 7
@@ -460,6 +387,8 @@ overall_fat <- lm(log(DryFatMass) ~ Plant + Sex + ForewingLength +RawWeight_day0
 normal_fat = lm(DryFatMass ~ Plant + Sex + ForewingLength +RawWeight_day0 + TotalSA, data = GH_data)
 plot(allEffects(normal_fat))
 
+Anova(overall_fat)
+summary(overall_fat)
 check_model(overall_fat)
 check_model(normal_fat)
 # Get the model data from the overall_fat model
@@ -473,14 +402,26 @@ plot(allEffects(overall_fat))
 print(butterfly_count_by_plant_overall_fat)
 
 Anova(overall_fat)
-#Create a table of the model output in a word doc
+options(scipen = 10)  # Adjusts R's display behavior to use scientific notation for very small values
+
+# Extract the coefficients and standard errors from the model
+coef_summary <- summary(overall_fat)$coefficients
+
+# Format the estimates and standard errors in scientific notation
+coef_estimates_scientific <- format(coef_summary[, 1], scientific = TRUE, digits = 3)
+se_estimates_scientific <- format(coef_summary[, 2], scientific = TRUE, digits = 3)
+
+# Now replace the estimates and SEs with the formatted versions
+# Create a new summary with updated values
 tab_model(overall_fat, 
           file = "tables/1_gh_2_fat.doc",   # Export to a Word document
           show.p = TRUE,                   
           show.stat = TRUE,
           show.se = TRUE,
-          show.df = TRUE
-          )
+          show.df = TRUE,
+          digits = 3
+)
+
 
 # Tukey-adjusted pairwise comparisons for Plant groups
 tukey_fat <- emmeans(overall_fat, pairwise ~ Plant, adjust = "tukey")
@@ -1856,6 +1797,8 @@ daily_summary <- tempdat %>%
     MinNightTemp = min(Temperature[DayNight == "Night"], na.rm = TRUE),
     .groups = 'drop'  # Prevents the warning for unused grouping
   )
+
+daily_summary
 
 # Create the plot
 mean_day_temp_plot <- ggplot(daily_summary, aes(x = JulianDate, y = MeanDayTemp, color = Location)) +
