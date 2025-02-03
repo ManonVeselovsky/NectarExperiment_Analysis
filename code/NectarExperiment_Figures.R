@@ -206,11 +206,6 @@ sig_pairs <- sig_pairs %>%
     TRUE ~ ""  # No star if not significant (though we already filtered p < 0.05)
   ))
 
-# Function to extract predictions for a specific plant pair
-get_pred_for_pair <- function(plant1, plant2) {
-  ggpredict(interact_weight, terms = c("TrialDay", paste(plant1, plant2, sep = "+")))
-}
-
 # Get predictions for all plant groups
 all_preds <- ggpredict(interact_weight, terms = c("TrialDay", "Plant"))
 
@@ -230,17 +225,21 @@ sig_plots <- lapply(1:nrow(sig_pairs), function(i) {
 # Combine all data for plotting
 plot_data <- bind_rows(sig_plots)
 
-# Merge significance stars into plot data
-plot_data <- plot_data %>%
-  left_join(sig_pairs, by = c("pair" = "contrast"))
+# Add a new 'pair' column in sig_pairs with the "vs" format
+sig_pairs <- sig_pairs %>%
+  mutate(pair = gsub(" - ", " vs ", contrast))
 
+# Now merge the datasets based on the new 'pair' column
+plot_data <- plot_data %>%
+  left_join(sig_pairs, by = "pair")
+
+# Create the plot with the significance stars added
 weight_slope_plot = ggplot(plot_data, aes(x = x, y = predicted, color = group)) +
   geom_line(size = 1) +  
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.2) +  
   labs(x = "Trial Day", y = "Weight (g)") +
   theme_minimal() +
   facet_wrap(~pair, scales = "free") +  # Separate plot for each significant pair
-  theme_minimal() +
   theme(
     axis.title = element_text(size = 16),
     axis.text = element_text(size = 16),
@@ -250,97 +249,44 @@ weight_slope_plot = ggplot(plot_data, aes(x = x, y = predicted, color = group)) 
     axis.line = element_line(colour = "black"),  # Keep axis lines
     axis.ticks = element_line(size = 0.5),
     legend.position = c(0.78, 0.15),  # Positions the legend at the bottom right
-    legend.justification = c(1, 0),  # Justifies the legend to the bottom-right corner
-    legend.text = element_text(size = 16),
+    legend.justification = c(0, 0),  # Justifies the legend to the bottom-right corner
+    legend.text = element_text(size = 16, hjust = 0),  # Left-justify the text
     strip.text = element_blank(), # Remove facet titles
     legend.title = element_blank(), # No legend title
     panel.grid = element_blank(),
     panel.background = element_rect(fill = "white")
-  )
-# 6. Display the plot
+  ) + 
+  scale_color_discrete(
+    labels = c(
+      "SymEri" = expression(italic("S. ericoides")),
+      "SolAlt" = expression(italic("S. altissima")),
+      "BudDav" = expression(italic("B. davidii")),
+      "EchPur" = expression(italic("E. purpurea")),
+      "RudHir" = expression(italic("R. hirta")),
+      "HelHel" = expression(italic("H. helianthoides"))
+    )
+  ) +
+  scale_fill_discrete(
+    labels = c(
+      "SymEri" = expression(italic("S. ericoides")),
+      "SolAlt" = expression(italic("S. altissima")),
+      "BudDav" = expression(italic("B. davidii")),
+      "EchPur" = expression(italic("E. purpurea")),
+      "RudHir" = expression(italic("R. hirta")),
+      "HelHel" = expression(italic("H. helianthoides"))
+    )
+  ) +
+  coord_cartesian(ylim = c(0.25, 0.6))
+
+
 weight_slope_plot
 
-ggsave("plots/weight_slope_plot.png", weight_slope_plot, width = 27, height = 25, units = "cm", dpi = 300,)
 
+# Display the plot
+weight_slope_plot
 
-# Step 1: Get emmeans for the interaction at TrialDay = 7
-# interaction_emmeans <- emmeans(interact_weight, ~ Plant * TrialDay, 
-#                                at = list(TrialDay = 7))  # Fix TrialDay at 7
-interaction_emmeans <- emmeans(interact_weight, ~ Plant * TrialDay)
+ggsave("plots/weight_slope_plot.jpeg", weight_slope_plot, width = 27, height = 25, units = "cm", dpi = 300,)
 
-
-# tukey_weight = emmeans(interact_weight, ~ Plant * TrialDay, 
-#                        at = list(TrialDay = 7))  # Fix TrialDay at 7
-
-interaction_emmeans
-
-# Step 2: Perform pairwise comparisons for Plant (Tukey-adjusted)
-plant_comparisons <- contrast(interaction_emmeans, 
-                              method = "pairwise", 
-                              simple = "each",  # Compare within each TrialDay
-                              combine = FALSE,  # Only focus on Plant comparisons
-                              # adjust = "tukey" # Force Tukey adjustment
-                              )  
-
-plant_comparisons
-# View pairwise results
-print(plant_comparisons)
-
-# Step 3: Generate compact letter display for Plant at TrialDay = 7
-plant_cld <- cld(interaction_emmeans, 
-                 by = "TrialDay",   # Generate letters per TrialDay
-                 adjust = "tukey",  # It is forcing a sidak adjustment
-                 #but the CLD for sidak matches the data from the tukey adjustment so I am running with this
-                 Letters = letters)
-
-# View the compact letter display
-print(plant_cld)
-
-# Step 4: Prepare the emmeans data frame for plotting
-interaction_emmeans_df <- as.data.frame(interaction_emmeans) %>%
-  filter(TrialDay == 7) %>%  # Only keep TrialDay = 7
-  mutate(.group = plant_cld$.group)  # Add significance letters
-
-# Step 5: Plot estimated means and raw data
-interaction_plot <- ggplot(interaction_emmeans_df, aes(x = Plant, y = emmean)) +
-  geom_point(size = 3, position = position_dodge(width = 0.5)) +
-  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2, position = position_dodge(width = 0.5)) +
-  # Add raw data points for TrialDay = 7
-  geom_jitter(data = subset(gh_TreatmentData, TrialDay == 7), 
-              aes(x = Plant, y = Weight), width = 0.095, height = 0, size = 1.25, alpha=.25) +
-  # Add significance letters above error bars
-  # Add significance letters above the upper confidence intervals
-  geom_text(aes(label = .group, y = upper.CL + 0.02), 
-            position = position_dodge(width = 0.5), size = 5) +
-  labs(x = "", y = "Weight (g)", title = "") +
-  theme_minimal() +
-  my_plot_theme +
-  scale_x_discrete(labels = c("SymEri" = "S. ericoides", 
-                              "BudDav" = "B. davidii", 
-                              "EchPur" = "E. purpurea", 
-                              "RudHir" = "R. hirta", 
-                              "SolAlt" = "S. altissima", 
-                              "HelHel" = "H. helianthoides"))
-
-print(interaction_plot)
-
-## Check that the scatterplot of the raw data makes sense for each species by looking at the raw data
-## plots
-# trial_day_7_data <- subset(gh_TreatmentData, TrialDay == 7)
-# 
-# ggplot(trial_day_7_data, aes(x = Plant, y = Weight)) +
-#   geom_jitter(width = 0.2, alpha = 0.7, color = "blue") + # Add raw data points with jitter for visibility
-#   stat_summary(fun.data = mean_cl_normal, geom = "errorbar", width = 0.2, color = "red") + # Add error bars for mean and CI
-#   stat_summary(fun = mean, geom = "point", shape = 18, size = 4, color = "red") + # Add mean points
-#   labs(
-#     x = "Plant Species",
-#     y = "Weight",
-#     title = "Raw Weights on TrialDay = 7 by Plant Species"
-#   ) +
-#   theme_minimal(base_size = 14) +
-#   theme(
-#     axis.text.x = element_text(angle = 45, hjust = 1) # Adjust x-axis label angle for better readability
-#   )
 
 Anova(interact_weight, type = 3)
 summary(interact_weight)
