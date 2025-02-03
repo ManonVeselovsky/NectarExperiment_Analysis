@@ -174,62 +174,90 @@ ggplot(gh_TreatmentData, aes(x = TrialDay, y = Weight, group = ID, color = as.fa
 
 # overall_weight = lmer(Weight~Plant+TotalSA+ForewingLength+OrigWeight+Sex+TrialDay+DateWeighed+EnclCol+(1|ID),data=gh_TreatmentData)
 
-#Remove the day 10 observations - just keep the 0, 1, 5, 7
 
 gh_TreatmentData
 
 # Fit the interaction model
 interact_weight = lmer(Weight ~ Plant * TrialDay + Sex + ForewingLength + EnclCol + TotalSA  + (1 | ID), data = gh_TreatmentData)
+Anova(interact_weight, type=3)
+summary(interact_weight)
 
-# Check model assumptions: Residuals and Collinearity
-check_model(interact_weight)  # Multicollinearity and residual diagnostics
-
-# Check for significant slopes for TrialDay by Plant using emtrends
-slopes = emtrends(interact_weight, pairwise ~ Plant, var = "TrialDay")
-slopes$emtrends  # Show slopes estimates
-slopes$contrasts  # Show pairwise comparisons of slopes
-
+# weight_nointeract = lmer(Weight ~ Plant +TrialDay + Sex + ForewingLength + EnclCol + TotalSA  + (1 | ID), data = gh_TreatmentData)
+# 
+# # Check model assumptions: Residuals and Collinearity
+# check_model(weight_nointeract)  # Multicollinearity and residual diagnostics
 
 
-# Calculate y position for stars (max of the predicted values for each facet)
-y_star_position <- pairwise_preds %>%
-  group_by(pair) %>%
-  summarise(max_pred = max(predicted, na.rm = TRUE)) %>%
-  left_join(significant_pairs, by = "pair") %>%
-  mutate(y_position = max_pred * 1.05)  # Slightly offset stars above max predicted value
+# Get estimated slopes for TrialDay within each Plant level
+plant_slopes <- emtrends(interact_weight, var = "TrialDay", specs = "Plant")
+# Pairwise comparisons of slopes
+slope_diffs <- pairs(plant_slopes, adjust = "tukey") |> as.data.frame()
+slope_diffs
 
-# Create the plot
-weight_slope_plot = ggplot(pairwise_preds, aes(x = x, y = predicted)) +
-  geom_line(aes(color = group), size = 1) +  # Use color as per the 'group'
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.2, color = NA) +
-  facet_wrap(~pair, scales = "free_y") + # One facet per pair
-  labs(x = "Sampling Day", y = "Weight (g)") +
-  scale_color_manual(
-    values = c("#F8766D", "#00BFC4", "#7CAE00", "#C77CFF", "#F564E3", "#619CFF"),
-    labels = lapply(plant_labels, function(name) bquote(italic(.(name))))
-  ) +
-  scale_fill_manual(
-    values = c("#F8766D", "#00BFC4", "#7CAE00", "#C77CFF", "#F564E3", "#619CFF"),
-    labels = lapply(plant_labels, function(name) bquote(italic(.(name))))
-  ) +
+# Filter only significant differences (p < 0.05)
+sig_pairs <- slope_diffs[slope_diffs$p.value < 0.05, c("contrast", "estimate", "p.value")]
+
+# Add significance stars based on p-values
+sig_pairs <- sig_pairs %>%
+  mutate(sig_star = case_when(
+    p.value < 0.001 ~ "***",
+    p.value < 0.005 ~ "**",
+    p.value < 0.05  ~ "*",
+    TRUE ~ ""  # No star if not significant (though we already filtered p < 0.05)
+  ))
+
+# Function to extract predictions for a specific plant pair
+get_pred_for_pair <- function(plant1, plant2) {
+  ggpredict(interact_weight, terms = c("TrialDay", paste(plant1, plant2, sep = "+")))
+}
+
+# Get predictions for all plant groups
+all_preds <- ggpredict(interact_weight, terms = c("TrialDay", "Plant"))
+
+# Function to extract predictions for a specific plant pair
+get_pred_for_pair <- function(plant1, plant2, data) {
+  data %>%
+    filter(group %in% c(plant1, plant2)) %>%
+    mutate(pair = paste(plant1, "vs", plant2))
+}
+
+# Generate predictions for all significant plant pairs
+sig_plots <- lapply(1:nrow(sig_pairs), function(i) {
+  plants <- unlist(strsplit(sig_pairs$contrast[i], " - "))  # Extract plant names
+  get_pred_for_pair(plants[1], plants[2], all_preds)
+})
+
+# Combine all data for plotting
+plot_data <- bind_rows(sig_plots)
+
+# Merge significance stars into plot data
+plot_data <- plot_data %>%
+  left_join(sig_pairs, by = c("pair" = "contrast"))
+
+weight_slope_plot = ggplot(plot_data, aes(x = x, y = predicted, color = group)) +
+  geom_line(size = 1) +  
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.2) +  
+  labs(x = "Trial Day", y = "Weight (g)") +
+  theme_minimal() +
+  facet_wrap(~pair, scales = "free") +  # Separate plot for each significant pair
   theme_minimal() +
   theme(
-    axis.title = element_text(size = 14),
-    axis.text = element_text(size = 12),
-    legend.position = c(0.85, 0.2),  # Positions the legend at the bottom right
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 16),
+    panel.grid.major = element_blank(),  # Remove major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    panel.border = element_blank(),  # Remove box outline
+    axis.line = element_line(colour = "black"),  # Keep axis lines
+    axis.ticks = element_line(size = 0.5),
+    legend.position = c(0.78, 0.15),  # Positions the legend at the bottom right
     legend.justification = c(1, 0),  # Justifies the legend to the bottom-right corner
+    legend.text = element_text(size = 16),
     strip.text = element_blank(), # Remove facet titles
     legend.title = element_blank(), # No legend title
     panel.grid = element_blank(),
     panel.background = element_rect(fill = "white")
-  ) +
-  # Add star labels for significance
-  geom_text(
-    data = y_star_position, aes(x = 7, y = y_position, label = star),
-    color = "black", size = 6, hjust = 1
   )
-
-# Display the plot
+# 6. Display the plot
 weight_slope_plot
 
 ggsave("plots/weight_slope_plot.png", weight_slope_plot, width = 27, height = 25, units = "cm", dpi = 300,)
@@ -427,7 +455,7 @@ tab_model(overall_fat,
 tukey_fat <- emmeans(overall_fat, pairwise ~ Plant, adjust = "tukey")
 Anova(overall_fat)
 tukey_contrasts <- tukey_fat$contrasts #Extract the contrast letters from the mult-comp
-
+tukey_contrasts
 # tidy_fat <- tidy(tukey_contrasts)
 # tidy_fat <- tidy_fat %>%
 #   mutate(across(where(is.numeric), round, 3))
@@ -440,7 +468,7 @@ cld_fat <- cld(tukey_fat$emmeans, Letters = letters)
 
 # Extract predictions specifically for the Plant variable
 effects_fat_plant <- ggpredict(overall_fat, terms = "Plant", ci.lvl = 0.95)
-
+effects_fat_plant
 plot(ggpredict(overall_fat, terms = "TotalSA",ci.lvl=0.95)+ggplot(gh))
 
 # Convert ggpredict object to a data frame
